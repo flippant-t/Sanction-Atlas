@@ -89,7 +89,10 @@ def norm(s):
     return re.sub(r"\s+", " ", s).strip().lower()
 
 def country_iso(token):
-    k = norm(token).rstrip(".")
+    raw = (token or "").strip()
+    if len(raw) == 2 and raw.upper() in COUNTRIES: return raw.upper()     # CSL uses ISO2 codes: "RU", "IR", "AF"
+    if raw.upper() == "XK": return "XK"
+    k = norm(raw).rstrip(".")
     if k in ALIAS: return ALIAS[k]
     if k in NAME2ISO: return NAME2ISO[k]
     return None
@@ -237,6 +240,7 @@ def build(rows):
             "ids": r.get("ids") or "", "url": r.get("source_information_url") or r.get("source_list_url") or "",
             "ves": " / ".join(x for x in [r.get("vessel_type"), r.get("vessel_flag"), r.get("call_sign"), r.get("vessel_owner")] if x),
             "listed": r.get("start_date") or "", "fr": r.get("federal_register_notice") or "",
+            "flag": r.get("vessel_flag") or "",
         }
         parties.append(p)
 
@@ -260,11 +264,38 @@ def build(rows):
             for n in p["nat"]:
                 iso = country_iso(n)
                 if iso:
-                    loc = {"raw": f"(nationality: {n})", "cc": iso, "lat": None, "lon": None, "city": None, "fb": True}
-                    p["a"].append(loc); break
+                    loc = {"raw": f"(nationality: {COUNTRIES.get(iso, {}).get('name', n)})", "cc": iso, "lat": None, "lon": None, "city": None, "fb": True}
+                    break
+        if loc is None and p["pob"]:
+            iso, lat, lon, city = geocode(p["pob"])
+            if iso:
+                loc = {"raw": f"(place of birth: {p['pob']})", "cc": iso, "lat": lat, "lon": lon, "city": city, "fb": True}
+        if loc is None and p["flag"]:
+            iso = country_iso(p["flag"])
+            if iso:
+                loc = {"raw": f"(flag: {COUNTRIES.get(iso, {}).get('name', p['flag'])})", "cc": iso, "lat": None, "lon": None, "city": None, "fb": True}
+        if loc: p["a"].append(loc)
         p["cc"] = loc["cc"] if loc else None
         p["lat"] = loc["lat"] if loc else None
         p["lon"] = loc["lon"] if loc else None
+
+    # last resort: a party with no location at all sits next to the party it is "Linked To"
+    by_name0 = {}
+    for p in parties:
+        if p["cc"]:
+            by_name0.setdefault(name_key(p["n"]), p)
+            for a in p["alt"]: by_name0.setdefault(name_key(a), p)
+    link_re0 = re.compile(r"Linked To:\s*([^;)]+)", re.I)
+    for _ in range(2):   # two passes so chains resolve
+        for p in parties:
+            if p["cc"]: continue
+            for m in link_re0.finditer(p["rem"]):
+                q = by_name0.get(name_key(m.group(1).rstrip(". ")))
+                if q and q["cc"]:
+                    p["cc"], p["lat"], p["lon"] = q["cc"], q["lat"], q["lon"]
+                    p["a"].append({"raw": f"(placed with linked party: {q['n']})", "cc": q["cc"], "lat": q["lat"], "lon": q["lon"], "city": None, "fb": True})
+                    by_name0.setdefault(name_key(p["n"]), p)
+                    break
 
     # edges
     by_name = {}
@@ -273,11 +304,11 @@ def build(rows):
         by_name.setdefault(name_key(p["n"]), p)
         for a in p["alt"]: by_name.setdefault(name_key(a), p)
     edges = []
-    link_re = re.compile(r"Linked To:\s*([^;]+?)(?:\s*;|\s*\.\s*$|$)", re.I)
+    link_re = re.compile(r"Linked To:\s*([^;)]+)", re.I)
     for p in parties:
         if not p["cc"]: continue
         for m in link_re.finditer(p["rem"]):
-            q = by_name.get(name_key(m.group(1).rstrip(".")))
+            q = by_name.get(name_key(m.group(1).rstrip(". ")))
             if q and q is not p:
                 edges.append({"k": "link", "a": p["id"], "b": q["id"]})
         # footprint: other distinct locations of the same party
@@ -354,10 +385,12 @@ def main():
         if p["cc"]: countries[p["cc"]] += 1
 
     # compact party records for the site
+    src_list = sorted({p["src"] for p in parties})
+    src_idx = {v: i for i, v in enumerate(src_list)}
     compact = []
     for p in parties:
         compact.append({k: v for k, v in {
-            "id": p["id"], "n": p["n"], "t": p["t"], "s": p["s"], "src": p["src"], "p": p["p"],
+            "id": p["id"], "n": p["n"], "t": p["t"], "s": p["s"], "si": src_idx[p["src"]], "p": p["p"],
             "cc": p["cc"], "lat": p["lat"], "lon": p["lon"], "city": next((a["city"] for a in p["a"] if a["lat"] is not None), None),
             "a": [a["raw"] for a in p["a"]], "ti": p["ti"], "alt": p["alt"], "dob": p["dob"], "nat": p["nat"],
             "pob": p["pob"], "rem": p["rem"], "ids": p["ids"], "url": p["url"], "ves": p["ves"], "listed": p["listed"],
@@ -372,7 +405,7 @@ def main():
         "source": CSL_URL, "parties": len(parties), "placed": placed, "with_city": with_city,
         "edges": {k: sum(1 for e in edges if e["k"] == k) for k in ("link", "foot", "nat")},
         "programs": sorted(programs.items(), key=lambda x: -x[1]), "sources": dict(sources), "types": dict(types),
-        "countries": dict(countries), "iso_numeric": iso_numeric, "iso_name": iso_name,
+        "countries": dict(countries), "iso_numeric": iso_numeric, "iso_name": iso_name, "src_list": src_list,
         "added_today": changes["added_today"], "removed_today": changes["removed_today"],
     }
     with open(os.path.join(OUT, "parties.json"), "w") as f:
