@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Sanctions Atlas nightly build.
+Sanctionscope nightly build.
 
 Downloads the US Consolidated Screening List (OFAC SDN + non-SDN, BIS Entity List,
 BIS Denied Persons / Unverified / MEU, State Department lists), geocodes every
@@ -190,7 +190,9 @@ def geocode(addr):
     return iso, None, None, None
 
 # ------------------------------------------------------------------ parsing
-def source_key(s):
+AUTH_ORDER = ["US", "EU", "UK", "UN", "AU", "CA"]
+def source_key(s, auth="US"):
+    if auth != "US": return auth
     t = (s or "").lower()
     if "specially designated" in t: return "OFAC SDN"
     if "non-sdn" in t or "sectoral" in t or "treasury" in t: return "OFAC other"
@@ -212,13 +214,96 @@ def name_key(s):
     return re.sub(r"[^A-Z0-9 ]", "", norm(s).upper()).strip()
 
 def load_rows(args):
+    status = {}
     if args.input:
         with open(args.input, newline="", encoding="utf-8-sig") as f:
-            return list(csv.DictReader(f))
-    import requests
-    r = requests.get(CSL_URL, timeout=180, headers={"User-Agent": "sanctions-atlas-build"})
-    r.raise_for_status()
-    return list(csv.DictReader(io.StringIO(r.content.decode("utf-8-sig"))))
+            rows = list(csv.DictReader(f))
+        status["US"] = {"ok": True, "n": len(rows), "error": ""}
+    else:
+        import requests
+        r = requests.get(CSL_URL, timeout=180, headers={"User-Agent": "sanctionscope-build"})
+        r.raise_for_status()
+        rows = list(csv.DictReader(io.StringIO(r.content.decode("utf-8-sig"))))
+        status["US"] = {"ok": True, "n": len(rows), "error": ""}
+    for r in rows: r["authority"] = "US"
+    if not args.us_only:
+        import sources
+        more, st = sources.load_all(args.sample_dir, only=args.only.split(",") if args.only else None)
+        rows += more; status.update(st)
+    return rows, status
+
+LEGAL = {"LLC", "LTD", "LIMITED", "INC", "CORP", "CORPORATION", "CO", "COMPANY", "GMBH", "AG", "SA", "SAS", "SARL", "BV", "NV", "PLC", "PJSC", "JSC", "OJSC", "CJSC",
+         "OAO", "ZAO", "OOO", "AO", "PAO", "TOO", "LLP", "LP", "SRL", "SPA", "SL", "PTE", "PTY", "PVT", "FZE", "FZCO", "FZC", "DMCC", "THE", "OF", "AND", "GROUP", "HOLDING", "HOLDINGS",
+         "PUBLIC", "JOINT", "STOCK", "OPEN", "CLOSED", "OBSHCHESTVO", "OGRANICHENNOY", "OTVETSTVENNOSTYU", "AKTSIONERNOE", "PUBLICHNOE", "ZAKRYTOE", "OTKRYTOE", "S", "OTVETSTVENNOSTIU"}
+def match_key(name, typ):
+    k = re.sub(r"[^A-Z0-9 ]", " ", norm(name).upper())
+    toks = [t for t in k.split() if t]
+    if typ != "Individual":
+        toks = [t for t in toks if t not in LEGAL]
+        if not toks or sum(len(t) for t in toks) < 6: return None
+        return "E:" + " ".join(toks)
+    toks = sorted(t for t in toks if len(t) > 1)
+    if len(toks) < 2: return None
+    return "I:" + " ".join(toks)
+
+def years(s):
+    return set(re.findall(r"(?<!\d)(1[89]\d\d|20\d\d)(?!\d)", s or ""))
+
+def merge_across_authorities(parties):
+    """Union parties from different authorities that share a normalised name (or alias)
+    and do not conflict on type or birth year. Same-authority records are never merged."""
+    parent = list(range(len(parties)))
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]; i = parent[i]
+        return i
+    def union(i, j):
+        a, b = find(i), find(j)
+        if a != b: parent[max(a, b)] = min(a, b)
+    index = {}
+    for i, p in enumerate(parties):
+        keys = {match_key(p["n"], p["t"])} | {match_key(a, p["t"]) for a in p["alt"][:20]}
+        for k in keys:
+            if not k: continue
+            for j in index.get(k, []):
+                q = parties[j]
+                if q["au"][0] == p["au"][0]: continue
+                if p["t"] == "Individual" and q["t"] == "Individual":
+                    ya, yb = years(p["dob"]), years(q["dob"])
+                    if ya and yb and not (ya & yb): continue
+                union(i, j)
+            index.setdefault(k, []).append(i)
+    groups = {}
+    for i in range(len(parties)): groups.setdefault(find(i), []).append(i)
+    merged = []
+    for root, idxs in groups.items():
+        members = sorted((parties[i] for i in idxs), key=lambda p: AUTH_ORDER.index(p["au"][0]))
+        base = members[0]
+        if len(members) == 1:
+            merged.append(base); continue
+        seen_au = set()
+        for m in members[1:]:
+            if m["au"][0] in seen_au or m["au"][0] == base["au"][0]:
+                merged.append(m); continue   # a second record from the same authority stays separate
+            seen_au.add(m["au"][0])
+            base["au"].append(m["au"][0]); base["recs"] += m["recs"]
+            base["p"] = sorted(set(base["p"]) | set(m["p"]))
+            have = {norm(x["raw"]) for x in base["a"]}
+            for a in m["a"]:
+                if norm(a["raw"]) not in have: base["a"].append(a); have.add(norm(a["raw"]))
+            for a in [m["n"]] + m["alt"]:
+                if name_key(a) != name_key(base["n"]) and a not in base["alt"]: base["alt"].append(a)
+            for n in m["nat"]:
+                if n not in base["nat"]: base["nat"].append(n)
+            if m["dob"] and m["dob"] not in base["dob"]: base["dob"] = "; ".join(x for x in [base["dob"], m["dob"]] if x)
+            if m["pob"] and not base["pob"]: base["pob"] = m["pob"]
+            if m["rem"]: base["rem"] = "\n".join(x for x in [base["rem"], f"[{m['au'][0]}] {m['rem']}"] if x)
+            if m["ids"]: base["ids"] = "; ".join(x for x in [base["ids"], m["ids"]] if x)
+            if m["ves"] and not base["ves"]: base["ves"] = m["ves"]
+            if m["flag"] and not base["flag"]: base["flag"] = m["flag"]
+        base["au"] = sorted(set(base["au"]), key=AUTH_ORDER.index)
+        merged.append(base)
+    return merged
 
 def build(rows):
     parties = []
@@ -226,15 +311,25 @@ def build(rows):
         name = (r.get("name") or "").strip()
         if not name: continue
         src = r.get("source") or ""
-        pid = f"{source_key(src)[:3].lower()}:{r.get('entity_number') or r.get('_id') or name_key(name)}"
+        auth = r.get("authority") or "US"
+        pid = f"{source_key(src, auth)[:3].lower()}:{r.get('entity_number') or r.get('_id') or name_key(name)}"
         addrs = []
         for a in split(r.get("addresses")):
             iso, lat, lon, city = geocode(a)
             addrs.append({"raw": a, "cc": iso, "lat": lat, "lon": lon, "city": city})
         nat = [n for n in split(r.get("nationalities")) + split(r.get("citizenships"))]
+        progs = split(r.get("programs"))
+        if not progs:
+            # BIS and State entries usually carry no program code; use the list itself so it can be filtered and categorised
+            sl = src.lower()
+            progs = ["ENTITY-LIST" if "entity list" in sl else "DENIED-PERSONS" if "denied" in sl else "UNVERIFIED-LIST" if "unverified" in sl
+                     else "MEU-LIST" if "military end" in sl else "ISN" if "nonproliferation" in sl else "AECA-DEBARRED" if "debar" in sl
+                     else "CAPTA" if "capta" in sl else "FSE" if "foreign sanctions evaders" in sl else "NS-" + re.sub(r"[^A-Z0-9]+", "-", src.split(" - ")[0].upper()).strip("-")[:30] if "non-sdn" in sl
+                     else re.sub(r"[^A-Z0-9]+", "-", src.split(" - ")[0].upper()).strip("-")[:30]]
         p = {
-            "id": pid, "n": name, "t": party_type(r.get("type")), "s": source_key(src), "src": src,
-            "p": split(r.get("programs")), "a": addrs, "ti": r.get("title") or "",
+            "id": pid, "n": name, "t": party_type(r.get("type")), "s": source_key(src, auth), "src": src, "au": [auth],
+            "recs": [{"au": auth, "src": src, "url": r.get("source_information_url") or r.get("source_list_url") or "", "p": progs, "listed": r.get("start_date") or ""}],
+            "p": progs, "a": addrs, "ti": r.get("title") or "",
             "alt": split(r.get("alt_names")), "dob": r.get("dates_of_birth") or "",
             "nat": nat, "pob": r.get("places_of_birth") or "", "rem": r.get("remarks") or "",
             "ids": r.get("ids") or "", "url": r.get("source_information_url") or r.get("source_list_url") or "",
@@ -251,6 +346,8 @@ def build(rows):
         while p["id"] in seen:
             i += 1; p["id"] = f"{base}#{i}"
         seen[p["id"]] = p
+
+    parties = merge_across_authorities(parties)
 
     # placement: first address with a city, else first with a country, else nationality country
     for p in parties:
@@ -368,12 +465,20 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", help="local consolidated.csv instead of downloading")
     ap.add_argument("--date", help="override build date (YYYY-MM-DD)")
+    ap.add_argument("--sample-dir", help="folder with local copies of eu.csv, uk.csv, un.xml, au.xlsx, ca.xml (offline testing)")
+    ap.add_argument("--us-only", action="store_true", help="skip the non-US lists")
+    ap.add_argument("--only", help="comma-separated subset of EU,UK,UN,AU,CA to load")
+    ap.add_argument("--site-url", default=os.environ.get("SITE_URL", ""), help="public base URL, used for canonical links and sitemap.xml")
     args = ap.parse_args()
     today = args.date or dt.date.today().isoformat()
     os.makedirs(OUT, exist_ok=True)
 
-    rows = load_rows(args)
+    rows, status = load_rows(args)
     parties, edges = build(rows)
+    auth_counts = defaultdict(int)
+    for p in parties:
+        for a in p["au"]: auth_counts[a] += 1
+    multi = sum(1 for p in parties if len(p["au"]) > 1)
     placed = sum(1 for p in parties if p["cc"])
     with_city = sum(1 for p in parties if p["lat"] is not None)
     changes = diff(parties, today)
@@ -390,10 +495,12 @@ def main():
     compact = []
     for p in parties:
         compact.append({k: v for k, v in {
-            "id": p["id"], "n": p["n"], "t": p["t"], "s": p["s"], "si": src_idx[p["src"]], "p": p["p"],
+            "id": p["id"], "n": p["n"], "t": p["t"], "s": p["s"], "si": src_idx[p["src"]], "p": p["p"], "au": p["au"],
+            "recs": [{"au": r["au"], "url": r["url"], "p": r["p"], "listed": r["listed"]} for r in p["recs"]] if len(p["recs"]) > 1 else None,
             "cc": p["cc"], "lat": p["lat"], "lon": p["lon"], "city": next((a["city"] for a in p["a"] if a["lat"] is not None), None),
             "a": [a["raw"] for a in p["a"]], "ti": p["ti"], "alt": p["alt"], "dob": p["dob"], "nat": p["nat"],
             "pob": p["pob"], "rem": p["rem"], "ids": p["ids"], "url": p["url"], "ves": p["ves"], "listed": p["listed"],
+            "ly": (lambda ys: min(ys) if ys else None)([int(y) for r in p["recs"] for y in re.findall(r"(?<!\d)(19\d\d|20\d\d)(?!\d)", r.get("listed") or "")]),
         }.items() if v not in ("", None, [])})
 
     iso_numeric = {iso: c["isonumeric"] for iso, c in COUNTRIES.items()}
@@ -407,6 +514,8 @@ def main():
         "programs": sorted(programs.items(), key=lambda x: -x[1]), "sources": dict(sources), "types": dict(types),
         "countries": dict(countries), "iso_numeric": iso_numeric, "iso_name": iso_name, "src_list": src_list,
         "added_today": changes["added_today"], "removed_today": changes["removed_today"],
+        "authorities": {a: {"n": auth_counts.get(a, 0), **status.get(a, {"ok": False, "n": 0, "error": "not loaded"})} for a in AUTH_ORDER},
+        "multi_listed": multi, "dated": sum(1 for p in compact if p.get("ly")),
     }
     with open(os.path.join(OUT, "parties.json"), "w") as f:
         json.dump({"parties": compact, "edges": edges}, f, separators=(",", ":"), ensure_ascii=False)
@@ -416,6 +525,13 @@ def main():
         json.dump(meta, f, separators=(",", ":"), ensure_ascii=False)
     print(f"{len(parties)} parties, {placed} placed, {with_city} to a city, "
           f"{meta['edges']} edges, +{changes['added_today']} -{changes['removed_today']}")
+    for a in AUTH_ORDER:
+        st = meta["authorities"][a]
+        print(f"  {a}: {'ok' if st['ok'] else 'FAILED'} {st['n']} parties {st['error']}")
+    print(f"  {multi} parties listed by more than one authority")
+    import pages
+    n_prog, n_cc, n_party = pages.build_pages(args.site_url)
+    print(f"static pages: {n_prog} programs, {n_cc} countries, {n_party} parties" + (", sitemap written" if args.site_url else ", no --site-url so no sitemap"))
 
 if __name__ == "__main__":
     main()
