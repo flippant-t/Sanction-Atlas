@@ -1,0 +1,62 @@
+name: Nightly update and deploy
+
+on:
+  schedule:
+    - cron: "20 6 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r pipeline/requirements.txt
+
+      - name: Download list, geocode, diff
+        run: python pipeline/build.py
+
+      - name: Render social preview image
+        continue-on-error: true
+        run: |
+          pip install playwright
+          python -m playwright install --with-deps chromium
+          python pipeline/og.py
+
+      - name: Commit data back to the repo
+        run: |
+          git config user.name "sanctions-atlas-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add site/data site/og.png
+          git diff --cached --quiet || git commit -m "data: $(date -u +%F)"
+          git push
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
