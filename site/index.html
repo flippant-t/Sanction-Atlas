@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sanctionscope</title>
+<title>SanctionScope</title>
 <meta name="description" content="Every party on the US, EU, UK, UN, Australian and Canadian sanctions and export-control lists, on one map, updated nightly, with the links between them and which authorities agree.">
-<meta property="og:title" content="Sanctionscope">
+<meta property="og:title" content="SanctionScope">
 <meta property="og:description" content="Sanctions lists from six authorities on one map, updated nightly, with links between parties and cross-list comparison.">
 <meta property="og:type" content="website">
 <meta property="og:image" content="og.png">
@@ -120,7 +120,7 @@
 <body>
 <div id="app">
   <aside id="rail">
-    <h1>Sanctionscope<small>Sanctions and export-control lists from the US, EU, UK, UN, Australia and Canada, on one map, updated nightly</small></h1>
+    <h1>SanctionScope<small>Sanctions and export-control lists from the US, EU, UK, UN, Australia and Canada, on one map, updated nightly</small></h1>
     <div class="stamp" id="stamp">Loading…</div>
 
 
@@ -186,6 +186,8 @@
       <h2>Timeline</h2>
       <div class="row"><span class="muted" style="width:44px">Listed</span><input type="range" id="yr" min="1990" max="2026" value="2026" style="flex:1"><b id="yrLabel" style="width:40px;text-align:right;font-weight:400">2026</b><button class="btn" id="yrPlay" style="padding:3px 8px">▶</button></div>
       <label class="chk"><input type="checkbox" id="yrUndated" checked>Include parties with no listing date</label>
+      <label class="chk"><input type="checkbox" id="inclInf" checked>Include inferred locations</label>
+      <div class="muted">Parties that publish no address are placed from the country of their sanctions program, a known area of operations (armed groups, cartels), or a country named in their record. Drawn hollow.</div>
       <div class="muted" id="yrNote"></div>
     </div>
 
@@ -208,7 +210,7 @@
 
     <div class="sec">
       <h2>Browse</h2>
-      <div class="row" style="flex-wrap:wrap"><a href="programs/">Programs</a> · <a href="countries/">Countries</a> · <a href="parties/">Most connected parties</a></div>
+      <div class="row" style="flex-wrap:wrap"><a href="screen.html">Screen a list</a> · <a href="api/">API</a> · <a href="programs/">Programs</a> · <a href="countries/">Countries</a> · <a href="parties/">Most connected</a></div>
     </div>
 
     <div class="sec muted">
@@ -217,9 +219,9 @@
   </aside>
 
   <main id="stage">
-    <div id="mhead"><b>Sanctionscope</b><span id="mstamp"></span></div>
+    <div id="mhead"><b>SanctionScope</b><span id="mstamp"></span></div>
     <div id="loading">Loading the list…</div>
-    <noscript><p style="padding:20px">Sanctionscope maps every party on the US Consolidated Screening List (OFAC, BIS and State Department lists), the EU, UK, UN, Australian and Canadian consolidated sanctions lists on a world map with the links between them, refreshed nightly from trade.gov. JavaScript is required to view the map.</p></noscript>
+    <noscript><p style="padding:20px">SanctionScope maps every party on the US Consolidated Screening List (OFAC, BIS and State Department lists), the EU, UK, UN, Australian and Canadian consolidated sanctions lists on a world map with the links between them, refreshed nightly from trade.gov. JavaScript is required to view the map.</p></noscript>
     <canvas id="map"></canvas><canvas id="over" style="position:absolute;inset:0;pointer-events:none"></canvas>
     <div id="zoomctl">
       <button class="btn" id="zin" aria-label="Zoom in">+</button>
@@ -243,7 +245,7 @@
 <script>
 // ---------- state ----------
 let META, PARTIES=[], EDGES=[], BYID=new Map(), CHANGES={events:[],series:[]};
-let filters={src:new Set(),type:new Set(),prog:new Set(),au:new Set()};let compare='';let YEAR=2026,UNDATED=true,CHG=null;let ADDED=new Set();
+let filters={src:new Set(),type:new Set(),prog:new Set(),au:new Set()};let compare='';let YEAR=2026,UNDATED=true,CHG=null,INCL_INF=true;let ADDED=new Set();
 let VISIBLE=[], VEDGES=[], BUCKETS=[], CBUCKETS=[], selected=null, hover=null, hoverB=null, feedExpanded=false;
 const BUBBLE_K=4;
 const SRC_COLOR={'OFAC SDN':'#e9b44c','OFAC other':'#d98b6a','BIS Entity List':'#5fb8c4','BIS other':'#7fd1b9','State / other':'#b18fd9','EU':'#6f9bdc','UK':'#c76f9b','UN':'#d9d3c3','AU':'#7fc47a','CA':'#e0665c'};
@@ -335,14 +337,14 @@ document.getElementById('zout').onclick=()=>d3.select(canvas).transition().durat
 document.getElementById('zreset').onclick=()=>d3.select(canvas).transition().duration(350).call(zoom.transform,d3.zoomIdentity);
 function arc(a,b){const ip=d3.geoInterpolate(a,b),n=Math.max(4,Math.min(24,Math.round(d3.geoDistance(a,b)*16)));const o=[];for(let i=0;i<=n;i++)o.push(ip(i/n));return o;}
 const SPR=new Map();
-function sprite(col,t,dim,r,S,ring){
-  const key=col+t+(dim?1:0)+r+(ring?'r':'');let c=SPR.get(key);if(c)return c;
+function sprite(col,t,dim,r,S,ring,hollow){
+  const key=col+t+(dim?1:0)+r+(ring?'r':'')+(hollow?'h':'');let c=SPR.get(key);if(c)return c;
   c=document.createElement('canvas');c.width=c.height=S*dpr;const g=c.getContext('2d');g.scale(dpr,dpr);
   g.globalAlpha=dim?0.35:0.9;g.fillStyle=col;g.beginPath();const x=S/2,y=S/2;
   if(t==='Individual')g.arc(x,y,r,0,6.283);
   else if(t==='Vessel'||t==='Aircraft'){g.moveTo(x,y-r*1.3);g.lineTo(x+r*1.2,y+r);g.lineTo(x-r*1.2,y+r);g.closePath();}
   else g.rect(x-r*0.9,y-r*0.9,r*1.8,r*1.8);
-  g.fill();if(ring){g.globalAlpha=dim?0.3:0.8;g.strokeStyle='#fff';g.lineWidth=0.8;g.beginPath();g.arc(x,y,r*1.9,0,6.283);g.stroke();}SPR.set(key,c);return c;
+  if(hollow){g.strokeStyle=col;g.lineWidth=Math.max(0.8,r*0.45);g.stroke();}else g.fill();if(ring){g.globalAlpha=dim?0.3:0.8;g.strokeStyle='#fff';g.lineWidth=0.8;g.beginPath();g.arc(x,y,r*1.9,0,6.283);g.stroke();}SPR.set(key,c);return c;
 }
 function bubbleMode(){return t.k<BUBBLE_K;}
 function choroOnly(){return t.k<2&&document.getElementById('shadeMode').value==='score';}
@@ -413,7 +415,7 @@ function draw(){
     const xy=projection([p.x,p.y]);if(!xy)continue;p.sx=xy[0];p.sy=xy[1];
     if(xy[0]<-5||xy[1]<-5||xy[0]>W+5||xy[1]>H+5)continue;
     const dim=selected&&p!==selected&&!NEIGH.has(p);
-    ctx.drawImage(sprite(pcolor(p),p.t,dim,r,S,p.au.length>1),xy[0]-half,xy[1]-half,S,S);
+    ctx.drawImage(sprite(pcolor(p),p.t,dim,r,S,p.au.length>1,!!p.inf),xy[0]-half,xy[1]-half,S,S);
   }
   }
   ctx.globalAlpha=1;
@@ -463,7 +465,7 @@ function renderLegend(){
   if(document.getElementById('shadeMode').value==='score'&&t.k<2){const s=document.createElement('span');s.textContent='Countries shaded by intensity index (party count, programs, recent activity). Hover for the score, click for the panel, zoom in for parties.';lg.appendChild(s);return;}
   if(compare){const [a,b]=compare.split('|');for(const [col,lab] of [[CMP_A,AUTH_NAME[a]+' only'],[CMP_B,AUTH_NAME[b]+' only'],[CMP_BOTH,'both']]){const s=document.createElement('span');s.innerHTML=`<i style="background:${col}"></i>`;s.append(lab);lg.appendChild(s);}return;}
   for(const k of Object.keys(SRC_COLOR)){if(!(META.sources[k]||(META.authorities&&META.authorities[k]&&META.authorities[k].n)))continue;const s=document.createElement('span');s.innerHTML=`<i style="background:${SRC_COLOR[k]}"></i>`;s.append(SRC_LABEL[k]||k);lg.appendChild(s);}
-  const s=document.createElement('span');s.style.color='var(--ink-3)';s.textContent='circle = person, square = company, triangle = vessel or aircraft, ring = listed by more than one authority';lg.appendChild(s);
+  const s=document.createElement('span');s.style.color='var(--ink-3)';s.textContent='circle = person, square = company, triangle = vessel or aircraft, ring = on more than one list, hollow = inferred location';lg.appendChild(s);
 }
 function renderProgs(){
   const pb=document.getElementById('progBox');pb.innerHTML='';const q=document.getElementById('progQ').value.trim().toLowerCase();
@@ -474,6 +476,7 @@ document.getElementById('cmp').addEventListener('change',e=>{compare=e.target.va
 const yrEl=document.getElementById('yr');
 yrEl.addEventListener('input',()=>{YEAR=+yrEl.value;document.getElementById('yrLabel').textContent=YEAR;update();});
 document.getElementById('yrUndated').addEventListener('change',e=>{UNDATED=e.target.checked;update();});
+document.getElementById('inclInf').addEventListener('change',e=>{INCL_INF=e.target.checked;update();});
 let yrTimer=null;
 document.getElementById('yrPlay').onclick=()=>{const b=document.getElementById('yrPlay');if(yrTimer){clearInterval(yrTimer);yrTimer=null;b.textContent='▶';return;}
   if(+yrEl.value>=+yrEl.max)yrEl.value=yrEl.min;b.textContent='❚❚';
@@ -493,7 +496,7 @@ document.getElementById('progAll').onclick=()=>{filters.prog=new Set(META.progra
 document.getElementById('progNone').onclick=()=>{filters.prog=new Set();renderProgs();update();};
 function cmpClass(p){if(!compare)return '';const [a,b]=compare.split('|');const ha=p.au.includes(a),hb=p.au.includes(b);return ha&&hb?'both':ha?'a':hb?'b':'';}
 function pcolor(p){if(CHG)return '#7fd1a0';if(compare){const c=cmpClass(p);return c==='both'?CMP_BOTH:c==='a'?CMP_A:CMP_B;}return SRC_COLOR[p.s]||'#ccc';}
-function passes(p){if(p.x==null)return false;if(CHG&&!ADDED.has(p.id))return false;if(p.ly?p.ly>YEAR:!UNDATED)return false;if(!p.au.some(a=>filters.au.has(a)))return false;if(compare&&!cmpClass(p))return false;if(p.au.includes('US')&&!filters.src.has(p.s))return false;if(!filters.type.has(p.t))return false;if(p.p&&p.p.length&&!p.p.some(g=>filters.prog.has(g)))return false;return true;}
+function passes(p){if(p.x==null)return false;if(!INCL_INF&&p.inf)return false;if(CHG&&!ADDED.has(p.id))return false;if(p.ly?p.ly>YEAR:!UNDATED)return false;if(!p.au.some(a=>filters.au.has(a)))return false;if(compare&&!cmpClass(p))return false;if(p.au.includes('US')&&!filters.src.has(p.s))return false;if(!filters.type.has(p.t))return false;if(p.p&&p.p.length&&!p.p.some(g=>filters.prog.has(g)))return false;return true;}
 function syncCats(){const cb=document.getElementById('catBox');let i=0;const catN=c=>CAT_PROGS.get(c).reduce((t,g)=>t+(META.programs.find(x=>x[0]===g)||[0,0])[1],0);for(const [c,list] of [...CAT_PROGS.entries()].sort((a,b)=>catN(b[0])-catN(a[0]))){const inp=cb.querySelectorAll('input')[i++];if(!inp)continue;const on=list.some(g=>filters.prog.has(g));inp.checked=on;inp.indeterminate=on&&!list.every(g=>filters.prog.has(g));}}
 function update(){
   syncCats();renderLegend();
@@ -545,7 +548,7 @@ function readURL(){
   if(q.get('kind'))filters.type=new Set(q.get('kind').split(','));
   if(q.has('lines')){const ln=new Set(q.get('lines').split(','));document.getElementById('lnLink').checked=ln.has('link');document.getElementById('lnFoot').checked=ln.has('foot');document.getElementById('lnNat').checked=ln.has('nat');document.getElementById('onlyLinked').checked=ln.has('onlylinked');}
   renderFilters();if(compare)setMode('compare');update();urlLock=false;
-  if(q.get('p')){const p=BYID.get(q.get('p'));if(p&&p.x!=null)select(p,true);}
+  if(q.get('p')){const p=BYID.get(q.get('p'));if(p)select(p,true);}
   else if(q.get('c')&&COUNTRY_STATS.has(q.get('c').toUpperCase())){const cc=q.get('c').toUpperCase();openCountry(cc);zoomTo(centroidByISO.get(cc)||[0,0],3);}
 }
 
@@ -566,7 +569,7 @@ canvas.addEventListener('mousemove',ev=>{
   const p=qt.find(x,y,7);
   if(p!==hover){hover=p||null;hoverB=null;canvas.classList.toggle('hot',!!hover);drawOver();}
   if(hover){tip.style.display='block';tip.innerHTML=`<div class="t"></div><div class="s"></div>`;tip.querySelector('.t').textContent=hover.n;
-    tip.querySelector('.s').textContent=[hover.t,hover.city||nameByISO[hover.cc]||'',(hover.p||[]).slice(0,2).join(', '),hover.edges.length?hover.edges.length+' line'+(hover.edges.length>1?'s':''):''].filter(Boolean).join(' · ');
+    tip.querySelector('.s').textContent=[hover.t,(hover.city||nameByISO[hover.cc]||'')+(hover.inf?' (inferred)':''),(hover.p||[]).slice(0,2).join(', '),hover.edges.length?hover.edges.length+' line'+(hover.edges.length>1?'s':''):''].filter(Boolean).join(' · ');
     tip.style.left=Math.min(W-270,x+14)+'px';tip.style.top=(y+14)+'px';}
   else tip.style.display='none';
 });
@@ -577,6 +580,7 @@ canvas.addEventListener('click',ev=>{if(!qt)return;const rect=canvas.getBounding
   const p=qt.find(ev.clientX-rect.left,ev.clientY-rect.top,8);if(p)select(p);else{selected=null;closeDrawer();draw();drawOver();writeURL();}});
 function zoomTo(lonlat,k){const xy=d3.geoNaturalEarth1().scale(baseScale).translate(baseTx)(lonlat);const tf=d3.zoomIdentity.translate(W/2,H/2).scale(k).translate(-xy[0],-xy[1]);d3.select(canvas).transition().duration(600).call(zoom.transform,tf);}
 function select(p,fly){
+  if(p.x==null)fly=false;
   selected=p;NEIGH=new Set();for(const e of p.edges){NEIGH.add(e.a);if(e.b)NEIGH.add(e.b);}openDrawer(p);draw();drawOver();writeURL();
   if(fly){const k=Math.max(t.k,p.lat!=null?9:4);const xy=d3.geoNaturalEarth1().scale(baseScale).translate(baseTx)([p.x,p.y]);
     const tf=d3.zoomIdentity.translate(W/2,H/2).scale(k).translate(-xy[0],-xy[1]);d3.select(canvas).transition().duration(600).call(zoom.transform,tf);}
@@ -603,7 +607,7 @@ function openCountry(cc){
   b.querySelector('#cZoom').onclick=()=>zoomTo(centroidByISO.get(cc)||[0,0],3);
   b.querySelector('#cShare').onclick=()=>{const q=new URLSearchParams(location.hash.slice(1));q.delete('p');q.set('c',cc.toLowerCase());const u=location.origin+location.pathname+'#'+q.toString();navigator.clipboard.writeText(u).then(()=>toast('Link copied'),()=>toast(u));};
   b.querySelector('#cFilter').onclick=()=>{filters.prog=new Set(c.progs.keys());renderProgs();update();toast('Programs filtered to '+name);};
-  b.querySelectorAll('li[data-i]').forEach(li=>li.onclick=()=>{const q=BYID.get(li.dataset.i);if(q&&q.x!=null)select(q,true);});
+  b.querySelectorAll('li[data-i]').forEach(li=>li.onclick=()=>{const q=BYID.get(li.dataset.i);if(q)select(q,true);});
   selected=null;d.classList.add('open');d.scrollTop=0;draw();drawOver();
 }
 document.getElementById('dclose').onclick=()=>{selected=null;closeDrawer();draw();drawOver();writeURL();};
@@ -613,6 +617,8 @@ function toast(msg){const el=document.getElementById('toast');el.textContent=msg
 function openDrawer(p){
   const d=document.getElementById('drawer'),b=document.getElementById('dbody');const rows=[];
   const add=(k,v,small)=>{if(v&&String(v).trim())rows.push(`<dt>${esc(k)}</dt><dd class="${small?'small':''}">${v}</dd>`);};
+  if(p.x==null)rows.push(`<dt>Location</dt><dd class="small">None given on any list, so this party is not drawn on the map.</dd>`);
+  else if(p.inf)rows.push(`<dt>Location</dt><dd class="small">Inferred, not from an address: ${esc(((p.a||[]).find(a=>a.startsWith('('))||'').replace(/^\(|\)$/g,''))}. Untick "Include inferred locations" under Advanced filters to hide such parties.</dd>`);
   add('Listed by',(p.au||[]).map(a=>`<span class="chip" style="border-color:${a==='US'?'#e9b44c':SRC_COLOR[a]}">${esc(AUTH_NAME[a]||a)}</span>`).join(' ')+(p.au&&p.au.length>1?'<div class="muted">Matched across lists by name; check each record.</div>':''));
   add('Programs',esc((p.p||[]).join(', ')));add('Address',(p.a||[]).map(esc).join('<br>'));add('Title',esc(p.ti));add('Also known as',esc((p.alt||[]).join('; ')),true);
   add('Born',esc(p.dob));add('Nationality',esc((p.nat||[]).join(', ')));add('Place of birth',esc(p.pob));add('Vessel',esc(p.ves));add('IDs',esc(p.ids),true);add('Listed',esc(p.listed));add('Remarks',p.rem&&p.rem.length>420?`<span class="clip">${esc(p.rem.slice(0,400))}… <a href="#" class="morelink">show all</a></span><span class="full" style="display:none">${esc(p.rem)}</span>`:esc(p.rem),true);
@@ -673,7 +679,7 @@ function renderFeed(){
     const li=document.createElement('li');
     li.innerHTML=`<span class="op ${e.op==='+'?'plus':'minus'}">${e.op}</span><div><div class="nm"></div><div class="meta"></div></div>`;
     li.querySelector('.nm').textContent=e.n;li.querySelector('.meta').textContent=[e.t,e.s,(e.p||[]).join(', '),nameByISO[e.cc]||''].filter(Boolean).join(' · ');
-    li.onclick=()=>{const p=BYID.get(e.id);if(p&&p.x!=null)select(p,true);else toast(e.op==='-'?'Removed from the list; no longer on the map':'Not placeable on the map');};
+    li.onclick=()=>{const p=BYID.get(e.id);if(p)select(p,p.x!=null);else toast('Removed from the list, so no longer in the data');};
     ul.appendChild(li);
   }
   // sparkline of total parties
@@ -738,7 +744,8 @@ async function boot(){
   const bigFetch=async(url)=>{const r=await fetch(url);const total=+r.headers.get('content-length')||0;if(!r.body||!total)return r.json();const reader=r.body.getReader();const chunks=[];let got=0;
     while(true){const {done,value}=await reader.read();if(done)break;chunks.push(value);got+=value.length;loadingEl.textContent=`Loading the list… ${(got/1048576).toFixed(1)} of ${(total/1048576).toFixed(1)} MB`;}
     const blob=new Blob(chunks);return JSON.parse(await blob.text());};
-  const [meta,data,changes,world,worldLo]=await Promise.all([fetch('data/meta.json').then(r=>r.json()),bigFetch('data/parties.json'),fetch('data/changes.json').then(r=>r.json()).catch(()=>({events:[],series:[]})),fetch('vendor/countries-50m.json').then(r=>r.json()),fetch('vendor/countries-110m.json').then(r=>r.json())]);
+  const partsFetch=async()=>{const m=await fetch('data/parties.json').then(r=>r.json());if(!m.parts)return m;let done=0;const all=await Promise.all(m.parts.map(async n=>{const j=await (await fetch('data/'+n)).json();done++;loadingEl.textContent=`Loading the list… ${done} of ${m.parts.length} parts`;return j;}));m.parties=[].concat(...all);return m;};
+  const [meta,data,changes,world,worldLo]=await Promise.all([fetch('data/meta.json').then(r=>r.json()),partsFetch(),fetch('data/changes.json').then(r=>r.json()).catch(()=>({events:[],series:[]})),fetch('vendor/countries-50m.json').then(r=>r.json()),fetch('vendor/countries-110m.json').then(r=>r.json())]);
   META=meta;PARTIES=data.parties;EDGES=data.edges;CHANGES=changes;for(const p of PARTIES)BYID.set(p.id,p);
   setupGeo(world,worldLo);place();
   filters.src=new Set(Object.keys(META.sources));filters.type=new Set(Object.keys(META.types));filters.prog=new Set(META.programs.map(x=>x[0]));filters.au=new Set(Object.keys(META.authorities||{US:1}));

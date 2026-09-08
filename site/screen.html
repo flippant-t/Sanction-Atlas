@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Screen a list · SanctionScope</title>
+<meta name="description" content="Screen a list of names against the US, EU, UK, UN, Australian and Canadian sanctions lists, entirely in your browser. Nothing is uploaded.">
+<style>
+:root{--ocean:#0e1726;--ink:#e6e1d6;--ink-2:#a39d90;--ink-3:#6b6659;--line:#26344a;--sdn:#e9b44c;--add:#7fd1a0;--rem:#e07a7a}
+*{box-sizing:border-box}body{margin:0;background:var(--ocean);color:var(--ink);font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;font-size:15px;line-height:1.5}
+a{color:var(--sdn)}header{border-bottom:1px solid var(--line);padding:14px 20px;font-size:14px;display:flex;gap:18px}header a{color:var(--ink-2);text-decoration:none}header a.brand{color:var(--ink);font-size:17px}
+main{max-width:980px;margin:0 auto;padding:28px 20px 60px}h1{font-size:28px;font-weight:400;margin:0 0 6px}.sub{color:var(--ink-2);margin:0 0 18px}
+textarea{width:100%;min-height:180px;background:#0c1421;border:1px solid var(--line);color:var(--ink);padding:10px;border-radius:4px;font:14px ui-monospace,Menlo,Consolas,monospace}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0}
+.btn{background:#182538;border:1px solid var(--line);color:var(--ink);padding:7px 12px;border-radius:4px;cursor:pointer;font:inherit}.btn.warm{background:var(--sdn);color:#1a1408;border-color:var(--sdn)}
+input[type=range]{accent-color:var(--sdn)}label{font-size:13px;color:var(--ink-2)}
+table{border-collapse:collapse;width:100%;font-size:13px;margin-top:14px}td,th{text-align:left;padding:6px 8px;border-top:1px solid var(--line);vertical-align:top}th{color:var(--ink-3);font-weight:500}
+.hit{color:var(--rem)}.clear{color:var(--add)}.score{font-variant-numeric:tabular-nums;color:var(--ink-2)}.muted{color:var(--ink-3);font-size:12px}
+#status{font-size:13px;color:var(--ink-2)}
+</style>
+</head>
+<body>
+<header><a class="brand" href="./">SanctionScope</a><a href="programs/">Programs</a><a href="countries/">Countries</a><a href="parties/">Parties</a><a href="api/">API</a><a href="screen.html">Screen</a></header>
+<main>
+<h1>Screen a list</h1>
+<p class="sub">Paste names, one per line, or drop a CSV (first column is used). Matching runs in your browser against all six lists; nothing is sent anywhere. Name matching only: confirm every hit against the official record before acting.</p>
+<textarea id="names" placeholder="Sberbank of Russia&#10;Ivan Ivanov&#10;Acme Trading FZE"></textarea>
+<div class="row">
+  <button class="btn warm" id="run">Screen</button>
+  <input type="file" id="file" accept=".csv,.txt" style="display:none"><button class="btn" id="pick">Load CSV</button>
+  <label>Threshold <input type="range" id="th" min="0.6" max="1" step="0.01" value="0.85"> <b id="thv">0.85</b></label>
+  <button class="btn" id="dl" style="display:none">Download results CSV</button>
+  <span id="status">Loading the index…</span>
+</div>
+<div id="out"></div>
+</main>
+<script>
+const LEGAL=new Set("LLC LTD LIMITED INC CORP CORPORATION CO COMPANY GMBH AG SA SAS SARL BV NV PLC PJSC JSC OJSC CJSC OAO ZAO OOO AO PAO LLP LP SRL SPA PTE PTY PVT FZE FZCO THE OF AND PUBLIC JOINT STOCK OPEN CLOSED".split(" "));
+const norm=s=>(s||"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/[^A-Z0-9 ]+/g," ").replace(/\s+/g," ").trim();
+const tokens=s=>norm(s).split(" ").filter(t=>t&&!LEGAL.has(t));
+function jw(a,b){if(a===b)return 1;const la=a.length,lb=b.length;if(!la||!lb)return 0;const range=Math.max(0,Math.floor(Math.max(la,lb)/2)-1);const ma=new Array(la).fill(false),mb=new Array(lb).fill(false);let m=0;
+for(let i=0;i<la;i++){const lo=Math.max(0,i-range),hi=Math.min(lb-1,i+range);for(let j=lo;j<=hi;j++)if(!mb[j]&&a[i]===b[j]){ma[i]=mb[j]=true;m++;break;}}if(!m)return 0;let t=0,k=0;for(let i=0;i<la;i++)if(ma[i]){while(!mb[k])k++;if(a[i]!==b[k])t++;k++;}
+const j=(m/la+m/lb+(m-t/2)/m)/3;let l=0;while(l<4&&a[l]===b[l])l++;return j+l*0.1*(1-j);}
+function scoreParty(q,p){const qt=tokens(q);if(!qt.length)return 0;let best=0;
+  for(const name of [p.n,...(p.alt||[])]){const nt=tokens(name);if(!nt.length)continue;
+    let sum=0;for(const a of qt){let m=0;for(const b of nt){const s=a===b?1:jw(a,b);if(s>m)m=s;}sum+=m>=0.8?m:m*0.5;}
+    const cov=sum/qt.length, extra=Math.max(0,nt.length-qt.length);
+    const s=cov*Math.max(0.8,1-0.04*extra);
+    if(s>best)best=s;if(best>=0.999)break;}
+  return best;}
+let INDEX=null,TOK=null;
+async function load(){const r=await fetch('api/v1/index.json');INDEX=await r.json();TOK=new Map();INDEX.forEach((p,i)=>{const seen=new Set();for(const name of [p.n,...(p.alt||[])])for(const t of tokens(name))if(t.length>1&&!seen.has(t)){seen.add(t);if(!TOK.has(t))TOK.set(t,[]);TOK.get(t).push(i);}});
+  document.getElementById('status').textContent=`Index ready: ${INDEX.length.toLocaleString()} parties.`;}
+function candidates(q,cap=300){const qt=tokens(q);if(!qt.length)return [];const lists=qt.map(t=>TOK.get(t)||[]).filter(l=>l.length).sort((a,b)=>a.length-b.length);const seen=new Map();for(const l of lists)for(const i of l)seen.set(i,(seen.get(i)||0)+1);return [...seen.entries()].sort((a,b)=>b[1]-a[1]).slice(0,cap).map(([i])=>INDEX[i]);}
+const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let RESULTS=[];
+function run(){if(!INDEX)return;const th=+document.getElementById('th').value;const names=document.getElementById('names').value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  RESULTS=names.map(name=>{const hits=candidates(name).map(p=>({p,score:scoreParty(name,p)})).filter(x=>x.score>=th).sort((a,b)=>b.score-a.score).slice(0,5);return {name,hits};});
+  const flagged=RESULTS.filter(r=>r.hits.length).length;
+  document.getElementById('status').textContent=`${names.length} screened, ${flagged} flagged at threshold ${th}.`;
+  document.getElementById('dl').style.display=RESULTS.length?'':'none';
+  document.getElementById('out').innerHTML=`<table><tr><th>Name</th><th>Result</th><th>Best match</th><th class="score">Score</th><th>Listed by</th><th>Programs</th></tr>`+RESULTS.map(r=>r.hits.length?r.hits.map((h,i)=>`<tr>${i===0?`<td rowspan="${r.hits.length}">${esc(r.name)}</td><td rowspan="${r.hits.length}" class="hit">possible match</td>`:''}<td><a href="#p=${encodeURIComponent(h.p.id)}" target="_blank">${esc(h.p.n)}</a> <span class="muted">${esc(h.p.t)}${h.p.cc?', '+esc(h.p.cc):''}</span></td><td class="score">${h.score.toFixed(2)}</td><td>${esc(h.p.au.join(', '))}</td><td class="muted">${esc((h.p.p||[]).slice(0,3).join(', '))}</td></tr>`).join(''):`<tr><td>${esc(r.name)}</td><td class="clear">no match</td><td colspan="4"></td></tr>`).join('')+'</table>';}
+document.getElementById('run').onclick=run;
+document.getElementById('th').oninput=e=>{document.getElementById('thv').textContent=e.target.value;};
+document.getElementById('pick').onclick=()=>document.getElementById('file').click();
+document.getElementById('file').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{const lines=r.result.split(/\r?\n/).map(l=>l.split(/[,;\t]/)[0].replace(/^"|"$/g,'').trim()).filter(Boolean);document.getElementById('names').value=lines.join('\n');};r.readAsText(f);};
+document.getElementById('dl').onclick=()=>{const rows=[['name','result','match','score','id','type','country','authorities','programs']];for(const r of RESULTS){if(!r.hits.length)rows.push([r.name,'no match','','','','','','','']);for(const h of r.hits)rows.push([r.name,'possible match',h.p.n,h.score.toFixed(3),h.p.id,h.p.t,h.p.cc||'',h.p.au.join(' '),(h.p.p||[]).join(' ')]);}
+  const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='screening.csv';a.click();};
+load().catch(e=>document.getElementById('status').textContent='Could not load the index: '+e.message);
+</script>
+</body>
+</html>

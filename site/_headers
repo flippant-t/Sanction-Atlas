@@ -1,0 +1,6 @@
+/api/*
+  Access-Control-Allow-Origin: *
+  Cache-Control: public, max-age=3600
+/data/*
+  Access-Control-Allow-Origin: *
+  Cache-Control: public, max-age=3600
