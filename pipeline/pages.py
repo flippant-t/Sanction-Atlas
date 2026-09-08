@@ -75,7 +75,12 @@ def slug(s):
 def esc(s): return html.escape(str(s or ""))
 
 def load(name):
-    with open(os.path.join(DATA, name), encoding="utf-8") as f: return json.load(f)
+    with open(os.path.join(DATA, name), encoding="utf-8") as f: obj = json.load(f)
+    if name == "parties.json" and "parts" in obj:
+        obj["parties"] = []
+        for part in obj["parts"]:
+            with open(os.path.join(DATA, part), encoding="utf-8") as f: obj["parties"] += json.load(f)
+    return obj
 
 CSS = """
 :root{--ocean:#0e1726;--ink:#e6e1d6;--ink-2:#a39d90;--ink-3:#6b6659;--line:#26344a;--sdn:#e9b44c}
@@ -93,11 +98,11 @@ footer{color:var(--ink-3);font-size:12px;border-top:1px solid var(--line);paddin
 
 def page(title, desc, body, rel, canonical, extra_head=""):
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{esc(title)} · Sanctionscope</title><meta name="description" content="{esc(desc)}"><link rel="canonical" href="{esc(canonical)}">
+<title>{esc(title)} · SanctionScope</title><meta name="description" content="{esc(desc)}"><link rel="canonical" href="{esc(canonical)}">
 <meta property="og:title" content="{esc(title)}"><meta property="og:description" content="{esc(desc)}"><meta property="og:image" content="{esc(rel)}og.png">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%230e1726'/><circle cx='16' cy='16' r='5' fill='%23e9b44c'/></svg>">
 <style>{CSS}</style>{extra_head}</head><body>
-<header><a class="brand" href="{rel}">Sanctionscope</a><a href="{rel}programs/">Programs</a><a href="{rel}countries/">Countries</a><a href="{rel}parties/">Parties</a></header>
+<header><a class="brand" href="{rel}">SanctionScope</a><a href="{rel}programs/">Programs</a><a href="{rel}countries/">Countries</a><a href="{rel}parties/">Parties</a><a href="{rel}screen.html">Screen</a><a href="{rel}api/">API</a></header>
 <main>{body}</main>
 <footer>Data: US Consolidated Screening List (OFAC, BIS, State), EU, UK OFSI, UN Security Council, Australia DFAT and Canada SEMA consolidated lists. Cross-list matching is by name and approximate. Rebuilt nightly. Not legal advice; confirm against the official record before acting.</footer>
 </body></html>"""
@@ -133,8 +138,14 @@ def build_pages(site_url):
         while s in used: s = f"{base}-{i}"; i += 1
         used.add(s); p["pg"] = s
     # write pg back into parties.json so the map can link to pages
-    with open(os.path.join(DATA, "parties.json"), "w", encoding="utf-8") as f:
-        json.dump(data, f, separators=(",", ":"), ensure_ascii=False)
+    if "parts" in data:
+        CH = 8000
+        for i, part in enumerate(data["parts"]):
+            with open(os.path.join(DATA, part), "w", encoding="utf-8") as f:
+                json.dump(data["parties"][i * CH:(i + 1) * CH], f, separators=(",", ":"), ensure_ascii=False)
+    else:
+        with open(os.path.join(DATA, "parties.json"), "w", encoding="utf-8") as f:
+            json.dump(data, f, separators=(",", ":"), ensure_ascii=False)
 
     recent = [e for e in changes.get("events", []) if e["op"] == "+"]
     urls = []

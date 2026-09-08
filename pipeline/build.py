@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Sanctionscope nightly build.
+SanctionScope nightly build.
 
 Downloads the US Consolidated Screening List (OFAC SDN + non-SDN, BIS Entity List,
 BIS Denied Persons / Unverified / MEU, State Department lists), geocodes every
@@ -18,7 +18,7 @@ Outputs (all under site/data/):
   state.json     internal: id -> first_seen / last_seen, used for the diff
 """
 import argparse, csv, io, json, os, re, sys, unicodedata, datetime as dt
-from collections import defaultdict
+from collections import defaultdict, Counter
 
 import geonamescache
 
@@ -229,7 +229,7 @@ def load_rows(args):
         r.raise_for_status()
         rows = list(csv.DictReader(io.StringIO(r.content.decode("utf-8-sig"))))
         status["US"] = {"ok": True, "n": len(rows), "error": ""}
-    for r in rows: r["authority"] = "US"
+    for r in rows: r.setdefault("authority", "US")   # a local CSV may carry an authority column (testing)
     if not args.us_only:
         import sources
         more, st = sources.load_all(args.sample_dir, only=args.only.split(",") if args.only else None)
@@ -239,12 +239,23 @@ def load_rows(args):
 LEGAL = {"LLC", "LTD", "LIMITED", "INC", "CORP", "CORPORATION", "CO", "COMPANY", "GMBH", "AG", "SA", "SAS", "SARL", "BV", "NV", "PLC", "PJSC", "JSC", "OJSC", "CJSC",
          "OAO", "ZAO", "OOO", "AO", "PAO", "TOO", "LLP", "LP", "SRL", "SPA", "SL", "PTE", "PTY", "PVT", "FZE", "FZCO", "FZC", "DMCC", "THE", "OF", "AND", "GROUP", "HOLDING", "HOLDINGS",
          "PUBLIC", "JOINT", "STOCK", "OPEN", "CLOSED", "OBSHCHESTVO", "OGRANICHENNOY", "OTVETSTVENNOSTYU", "AKTSIONERNOE", "PUBLICHNOE", "ZAKRYTOE", "OTKRYTOE", "S", "OTVETSTVENNOSTIU"}
+GENERIC = {"BANK", "RUSSIA", "RUSSIAN", "FEDERATION", "TRADING", "TRADE", "INTERNATIONAL", "INDUSTRIES", "INDUSTRIAL", "INDUSTRY", "TECHNOLOGY", "TECHNOLOGIES",
+           "SERVICES", "SERVICE", "SHIPPING", "ENGINEERING", "ENTERPRISE", "ENTERPRISES", "IRAN", "IRANIAN", "KOREA", "KOREAN", "NATIONAL", "GENERAL", "CENTRAL",
+           "STATE", "DEVELOPMENT", "INVESTMENT", "INVESTMENTS", "PETROLEUM", "OIL", "GAS", "ELECTRONICS", "ELECTRONIC", "MACHINERY", "EQUIPMENT", "SCIENTIFIC",
+           "RESEARCH", "INSTITUTE", "CENTER", "CENTRE", "PLANT", "FACTORY", "WORKS", "PRODUCTION", "SYSTEMS", "SYSTEM", "AVIATION", "MARINE", "MARITIME", "LOGISTICS",
+           "TRANSPORT", "EXPORT", "IMPORT", "FINANCE", "FINANCIAL", "CAPITAL", "CREDIT", "INSURANCE", "SECURITY", "DEFENSE", "DEFENCE", "MILITARY", "SHIP", "AIR",
+           "UNITED", "GLOBAL", "WORLD", "NEW", "FIRST", "MINISTRY", "DEPARTMENT", "BUREAU", "OFFICE", "AGENCY", "ORGANIZATION", "ORGANISATION", "FOUNDATION",
+           "FUND", "UNION", "ASSOCIATION", "COUNCIL", "COMMITTEE", "CORPS", "FORCE", "FORCES", "ARMY", "NAVY", "GUARD", "GUARDS", "PEOPLES", "PEOPLE", "DEMOCRATIC",
+           "REPUBLIC", "ISLAMIC", "REVOLUTIONARY", "SYRIAN", "SYRIA", "CHINA", "CHINESE", "BELARUS", "BELARUSIAN", "UKRAINE", "UKRAINIAN", "VENEZUELA", "CUBA",
+           "MYANMAR", "BURMA", "LIBYA", "LIBYAN", "IRAQ", "IRAQI", "AFGHAN", "TURKISH", "ARAB", "GULF", "PACIFIC", "ATLANTIC", "EAST", "WEST", "NORTH", "SOUTH",
+           "MOSCOW", "TEHRAN", "PYONGYANG", "DUBAI", "HONG", "KONG", "SHANGHAI", "BEIJING"}
 def match_key(name, typ):
     k = re.sub(r"[^A-Z0-9 ]", " ", norm(name).upper())
     toks = [t for t in k.split() if t]
     if typ != "Individual":
         toks = [t for t in toks if t not in LEGAL]
         if not toks or sum(len(t) for t in toks) < 6: return None
+        if len(toks) < 3 and not any(t not in GENERIC for t in toks): return None   # "BANK RUSSIA", "IRAN TRADING": too generic to identify anything
         return "E:" + " ".join(toks)
     toks = sorted(t for t in toks if len(t) > 1)
     if len(toks) < 2: return None
@@ -266,12 +277,15 @@ def merge_across_authorities(parties):
         if a != b: parent[max(a, b)] = min(a, b)
     index = {}
     for i, p in enumerate(parties):
-        keys = {match_key(p["n"], p["t"])} | {match_key(a, p["t"]) for a in p["alt"][:20]}
+        keys = {match_key(p["n"], p["t"])}
+        # aliases join the match only when specific enough (three or more tokens)
+        keys |= {k for k in (match_key(a, p["t"]) for a in p["alt"][:20]) if k and len(k.split()) >= 4}
         for k in keys:
             if not k: continue
             for j in index.get(k, []):
                 q = parties[j]
-                if q["au"][0] == p["au"][0]: continue
+                # the same authority listing one company under two regimes is one company; people are only merged across lists
+                if q["au"][0] == p["au"][0] and not (p["t"] == "Entity" and q["t"] == "Entity"): continue
                 if p["t"] == "Individual" and q["t"] == "Individual":
                     ya, yb = years(p["dob"]), years(q["dob"])
                     if ya and yb and not (ya & yb): continue
@@ -285,12 +299,9 @@ def merge_across_authorities(parties):
         base = members[0]
         if len(members) == 1:
             merged.append(base); continue
-        seen_au = set()
         for m in members[1:]:
-            if m["au"][0] in seen_au or m["au"][0] == base["au"][0]:
-                merged.append(m); continue   # a second record from the same authority stays separate
-            seen_au.add(m["au"][0])
-            base["au"].append(m["au"][0]); base["recs"] += m["recs"]
+            if m["au"][0] not in base["au"]: base["au"].append(m["au"][0])
+            base["recs"] += m["recs"]
             base["p"] = sorted(set(base["p"]) | set(m["p"]))
             have = {norm(x["raw"]) for x in base["a"]}
             for a in m["a"]:
@@ -308,6 +319,50 @@ def merge_across_authorities(parties):
         base["au"] = sorted(set(base["au"]), key=AUTH_ORDER.index)
         merged.append(base)
     return merged
+
+# country-name spotting in free text: longest names first so "South Sudan" beats "Sudan", "North Korea" beats "Korea"
+_CTEXT = sorted([(k, v) for k, v in list(NAME2ISO.items()) + list(ALIAS.items()) if v and len(k) > 3 and k not in ("us", "uk", "prc", "drc", "uae", "ksa", "bvi", "dprk", "korea", "congo")], key=lambda x: -len(x[0]))
+_CTEXT_RE = re.compile(r"\b(" + "|".join(re.escape(k) for k, _ in _CTEXT) + r")\b", re.I)
+_CTEXT_MAP = {k: v for k, v in _CTEXT}
+def country_in_text(text):
+    if not text: return None
+    hits = Counter(_CTEXT_MAP[m.lower()] for m in _CTEXT_RE.findall(norm(text)) if m.lower() in _CTEXT_MAP)
+    return hits.most_common(1)[0][0] if hits else None
+
+# (regex on name or alias, ISO2, label). Where a group operates, for groups that publish no address.
+GROUP_AREAS = [
+    (r"\bal[- ]?qa[i']?da in the arabian peninsula|\bAQAP\b|ansar al[- ]sharia in yemen|houthi|ansar ?allah|\bhuthi", "YE", "Yemen"),
+    (r"al[- ]?qa[i']?da in the islamic maghreb|\bAQIM\b|jama'?at nusrat al[- ]islam|\bJNIM\b|ansar (al[- ])?dine|macina|islamic state in the greater sahara|\bISGS\b", "ML", "Mali and the Sahel"),
+    (r"al[- ]?shabaab|harakat shabaab", "SO", "Somalia"),
+    (r"boko haram|islamic state west africa|\bISWAP\b|ansaru", "NG", "Nigeria"),
+    (r"\bISIL\b|\bISIS\b|islamic state of iraq|islamic state in iraq|da'?esh|al[- ]nusrah|nusra front|hay'?at tahrir al[- ]sham|\bHTS\b|hurras al[- ]din|ahrar al[- ]sham|jaysh al[- ]islam", "SY", "Syria and Iraq"),
+    (r"kata'?ib hi?zb|asa'?ib ahl|harakat (hi?zb)?allah al[- ]nujaba|badr organi[sz]ation|ansar al[- ]islam|islamic state.*iraq|popular mobili[sz]ation|kata'?ib sayyid", "IQ", "Iraq"),
+    (r"\bhamas\b|izz ?al[- ]din|qassam|palestinian islamic jihad|\bPIJ\b|popular front for the liberation of palestine|\bPFLP\b|al[- ]aqsa martyrs|palestinian", "PS", "Gaza and the West Bank"),
+    (r"hi?zb[ao]ll?ah(?! al)|\bhezbollah\b|jihad al[- ]bina|al[- ]qard al[- ]hassan|al[- ]manar", "LB", "Lebanon"),
+    (r"\btaliban\b|haqqani|islamic emirate of afghanistan|\bal[- ]?qa[i']?da\b(?! in)|\bal[- ]?qaeda\b(?! in)", "AF", "Afghanistan and Pakistan"),
+    (r"tehrik[- ]e[- ]taliban|\bTTP\b|lashkar[- ]e[- ]tayyiba|lashkar[- ]e[- ]taiba|\bLeT\b|jaish[- ]e[- ]mohamm?ed|\bJeM\b|harakat ul[- ]mujahid|jamaat[- ]ud[- ]dawa|lashkar[- ]i?[- ]jhangvi|al[- ]qa[i']?da in the indian subcontinent|\bAQIS\b", "PK", "Pakistan"),
+    (r"abu sayyaf|maute|bangsamoro islamic freedom|jemaah islami|\bJI\b(?![A-Z])|mujahidin indonesia timur|ansharut daulah", "PH", "Philippines and Indonesia"),
+    (r"kurdistan workers'? party|\bPKK\b|kongra[- ]gel|revolutionary people'?s liberation party|\bDHKP", "TR", "Turkey"),
+    (r"\bFARC\b|revolutionary armed forces of colombia|ejercito de liberacion nacional|\bELN\b|clan del golfo|gulf clan|segunda marquetalia", "CO", "Colombia"),
+    (r"sendero luminoso|shining path", "PE", "Peru"),
+    (r"\bETA\b|euskadi ta askatasuna|basque fatherland", "ES", "Spain"),
+    (r"real IRA|continuity IRA|irish republican army|\bIRA\b|ulster", "GB", "Northern Ireland"),
+    (r"allied democratic forces|\bADF\b|m23|fdlr|codeco|mai[- ]mai", "CD", "Democratic Republic of the Congo"),
+    (r"lord'?s resistance army|\bLRA\b", "UG", "Uganda and Central Africa"),
+    (r"rapid support forces|\bRSF\b|janjaweed", "SD", "Sudan"),
+    (r"wagner|africa corps|redut", "RU", "Russia (operating abroad)"),
+    (r"islamic revolutionary guard|\bIRGC\b|quds force|basij|ministry of intelligence and security|\bMOIS\b", "IR", "Iran"),
+    (r"korea .*(mining|trading|development|bank)|choson|korean people'?s army|reconnaissance general bureau|munitions industry|workers'? party of korea|koryo|ryonbong|tangun", "KP", "North Korea"),
+    (r"sinaloa|jalisco|cartel|c[aá]rtel|los zetas|beltr[aá]n|guerreros unidos|la familia|caballeros templarios|nueva plaza", "MX", "Mexico"),
+    (r"primeiro comando|comando vermelho", "BR", "Brazil"),
+    (r"tren de aragua", "VE", "Venezuela"),
+    (r"\bMS-?13\b|mara salvatrucha|barrio 18", "SV", "El Salvador"),
+    (r"yakuza|yamaguchi[- ]gumi|inagawa|sumiyoshi", "JP", "Japan"),
+    (r"'?ndrangheta|camorra|cosa nostra|sacra corona", "IT", "Italy"),
+    (r"thieves[- ]in[- ]law|brothers'? circle|solntsev", "RU", "Russia"),
+    (r"kinahan", "IE", "Ireland"),
+    (r"14k|sun yee on|wo shing wo|triad", "HK", "Hong Kong"),
+]
 
 def build(rows):
     parties = []
@@ -391,16 +446,36 @@ def build(rows):
         "EU:UKR": "UA", "EU:PRK": "KP", "EU:IRN": "IR", "EU:TUN": "TN", "EU:ZWE": "ZW", "EU:TUR": "TR", "EU:MDA": "MD", "EU:BIH": "BA", "EU:LBN": "LB", "EU:EGY": "EG", "EU:NER": "NE",
         "UN:DPRK": "KP", "UN:SOMALIA": "SO", "UN:LIBYA": "LY", "UN:YEMEN": "YE", "UN:IRAQ": "IQ", "UN:MALI": "ML", "UN:SOUTH SUDAN": "SS", "UN:CAR": "CF", "UN:DRC": "CD",
         "UN:SUDAN": "SD", "UN:HAITI": "HT", "UN:GUINEA-BISSAU": "GW", "UN:TALIBAN": "AF"}
+    REGIME_CC.update({"NS-PLC": "PS", "HAMAS": "PS", "HIZBALLAH": "LB", "LEBANON": "LB", "IRGC": "IR", "IFSR": "IR", "IRAN": "IR", "DPRK": "KP", "SOMALIA": "SO"})
     for p in parties:
         if p["cc"]: continue
         for g in p["p"]:
             gu = g.upper()
             hit = REGIME_CC.get(gu) or next((cc for k, cc in REGIME_CC.items() if ":" not in k and gu.startswith(k)), None) \
-                  or next((cc for k, cc in REGIME_CC.items() if ":" in k and gu.startswith(k)), None)
+                  or next((cc for k, cc in REGIME_CC.items() if ":" in k and gu.startswith(k)), None) or country_in_text(g.split(":", 1)[-1])
             if hit:
-                p["cc"] = hit
-                p["a"].append({"raw": f"(program country: {COUNTRIES.get(hit, {}).get('name', hit)})", "cc": hit, "lat": None, "lon": None, "city": None, "fb": True})
+                p["cc"] = hit; p["inf"] = "program"
+                p["a"].append({"raw": f"(country of the sanctions program: {COUNTRIES.get(hit, {}).get('name', hit)})", "cc": hit, "lat": None, "lon": None, "city": None, "fb": True})
                 break
+
+    # ---- 2. well-known armed groups and networks: area of operations (curated; shown as inferred)
+    for p in parties:
+        if p["cc"]: continue
+        names = [p["n"]] + p["alt"][:15]
+        for pat, cc, label in GROUP_AREAS:
+            if any(re.search(pat, n, re.I) for n in names):
+                p["cc"] = cc; p["inf"] = "group"
+                p["a"].append({"raw": f"(area of operations: {label})", "cc": cc, "lat": None, "lon": None, "city": None, "fb": True})
+                break
+
+    # ---- 3. country names mentioned in remarks or aliases ("operates in Yemen", "based in Lebanon")
+    for p in parties:
+        if p["cc"]: continue
+        text = " ".join([p["rem"]] + p["alt"][:10] + [p["ti"]])
+        hit = country_in_text(text)
+        if hit:
+            p["cc"] = hit; p["inf"] = "remarks"
+            p["a"].append({"raw": f"(country mentioned in the record: {COUNTRIES.get(hit, {}).get('name', hit)})", "cc": hit, "lat": None, "lon": None, "city": None, "fb": True})
 
     # last resort: a party with no location at all sits next to the party it is "Linked To"
     by_name0 = {}
@@ -457,9 +532,16 @@ def diff(parties, today):
     if os.path.exists(path):
         with open(path) as f: state = json.load(f)
     seen = state["seen"]; now_ids = {p["id"]: p for p in parties}
-    prev_auths = set(state.get("auths", []))
+    PFX = {"ofa": "US", "bis": "US", "sta": "US", "eu": "EU", "uk": "UK", "un": "UN", "au": "AU", "ca": "CA"}
+    auth_of_id = lambda pid: PFX.get(pid.split(":")[0], "US")
+    prev_auths = set(state.get("auths") or {auth_of_id(pid) for pid in seen})
     now_auths = {a for p in parties for a in p["au"]}
     onboarding = now_auths - prev_auths if prev_auths else set()
+    # first date each authority appeared; additions on that date for that authority were onboarding, not designations
+    first_day = {}
+    for pid, rec in seen.items():
+        a = auth_of_id(pid); first_day[a] = min(first_day.get(a, "9999"), rec.get("first", "9999"))
+    state["events"] = [e for e in state.get("events", []) if not (e["op"] == "+" and first_day.get(auth_of_id(e["id"])) == e["d"] and e["d"] != state.get("first_day_of_site", ""))]
     added, removed = [], []
     for pid, p in now_ids.items():
         if pid not in seen:
@@ -486,6 +568,7 @@ def diff(parties, today):
     state["series"] = state["series"][-400:]
     state["last_run"] = today
     state["auths"] = sorted(now_auths | prev_auths)
+    state.setdefault("first_day_of_site", today)
     with open(path, "w") as f: json.dump(state, f, separators=(",", ":"))
     return {"events": sorted(state["events"], key=lambda e: e["d"], reverse=True), "series": state["series"],
             "first_run": first_run, "added_today": len(added), "removed_today": len(removed)}
@@ -527,7 +610,7 @@ def main():
         compact.append({k: v for k, v in {
             "id": p["id"], "n": p["n"], "t": p["t"], "s": p["s"], "si": src_idx[p["src"]], "p": p["p"], "au": p["au"],
             "recs": [{"au": r["au"], "url": r["url"], "p": r["p"], "listed": r["listed"]} for r in p["recs"]] if len(p["recs"]) > 1 else None,
-            "cc": p["cc"], "lat": p["lat"], "lon": p["lon"], "city": next((a["city"] for a in p["a"] if a["lat"] is not None), None),
+            "cc": p["cc"], "lat": p["lat"], "lon": p["lon"], "inf": p.get("inf"), "city": next((a["city"] for a in p["a"] if a["lat"] is not None), None),
             "a": [a["raw"] for a in p["a"]], "ti": p["ti"], "alt": p["alt"], "dob": p["dob"], "nat": p["nat"],
             "pob": p["pob"], "rem": p["rem"], "ids": p["ids"], "url": p["url"], "ves": p["ves"], "listed": p["listed"],
             "ly": (lambda ys: min(ys) if ys else None)([int(y) for r in p["recs"] for y in re.findall(r"(?<!\d)(19\d\d|20\d\d)(?!\d)", r.get("listed") or "")]),
@@ -547,8 +630,17 @@ def main():
         "authorities": {a: {"n": auth_counts.get(a, 0), **status.get(a, {"ok": False, "n": 0, "error": "not loaded"})} for a in AUTH_ORDER},
         "multi_listed": multi, "dated": sum(1 for p in compact if p.get("ly")),
     }
-    with open(os.path.join(OUT, "parties.json"), "w") as f:
-        json.dump({"parties": compact, "edges": edges}, f, separators=(",", ":"), ensure_ascii=False)
+    # Hosts cap single files (Cloudflare Pages: 25 MB), so the party list is written in parts plus a manifest.
+    for old in os.listdir(OUT):
+        if old.startswith("parties-") and old.endswith(".json"): os.remove(os.path.join(OUT, old))
+    CHUNK = 8000
+    parts = []
+    for i in range(0, len(compact), CHUNK):
+        name = f"parties-{i // CHUNK + 1}.json"; parts.append(name)
+        with open(os.path.join(OUT, name), "w", encoding="utf-8") as f:
+            json.dump(compact[i:i + CHUNK], f, separators=(",", ":"), ensure_ascii=False)
+    with open(os.path.join(OUT, "parties.json"), "w", encoding="utf-8") as f:
+        json.dump({"parts": parts, "count": len(compact), "edges": edges}, f, separators=(",", ":"), ensure_ascii=False)
     with open(os.path.join(OUT, "changes.json"), "w") as f:
         json.dump({"events": changes["events"], "series": changes["series"]}, f, separators=(",", ":"), ensure_ascii=False)
     with open(os.path.join(OUT, "meta.json"), "w") as f:
@@ -562,6 +654,9 @@ def main():
     import pages
     n_prog, n_cc, n_party = pages.build_pages(args.site_url)
     print(f"static pages: {n_prog} programs, {n_cc} countries, {n_party} parties" + (", sitemap written" if args.site_url else ", no --site-url so no sitemap"))
+    import api
+    n_api, n_sh = api.build_api(args.site_url)
+    print(f"api: {n_api} parties in {n_sh} shards under site/api/v1/")
 
 if __name__ == "__main__":
     main()
