@@ -16,9 +16,9 @@ UA = {"User-Agent": "Mozilla/5.0 (compatible; sanctionscope-build; +https://gith
 SOURCES = {
     "EU": ("EU Consolidated Financial Sanctions List",
            "https://webgate.ec.europa.eu/fsd/fsf/public/files/csvFullSanctionsList_1_1/content?token=dG9rZW4tMjAxNw", "eu.csv"),
-    "UK": ("UK OFSI Consolidated List", "https://ofsisanctionslist.blob.core.windows.net/publicdata/ConList.csv", "uk.csv"),
+    "UK": ("UK Sanctions List (FCDO)", "https://sanctionslist.fcdo.gov.uk/docs/UK-Sanctions-List.csv", "uk.csv"),
     "UN": ("UN Security Council Consolidated List", "https://scsanctions.un.org/resources/xml/en/consolidated.xml", "un.xml"),
-    "AU": ("Australia DFAT Consolidated List", "https://www.dfat.gov.au/sites/default/files/regulation8_consolidated.xlsx", "au.xlsx"),
+    "AU": ("Australia DFAT Consolidated List", "https://www.dfat.gov.au/sites/default/files/Australian_Sanctions_Consolidated_List.xlsx", "au.xlsx"),
     "CA": ("Canada SEMA / Autonomous Sanctions", "https://www.international.gc.ca/world-monde/assets/office_docs/international_relations-relations_internationales/sanctions/sema-lmes.xml", "ca.xml"),
 }
 RECORD_URL = {
@@ -88,44 +88,73 @@ def parse_eu(raw):
     return out
 
 # ------------------------------------------------------------------ UK
+UK_COLS = {   # canonical -> accepted header names (UKSL 2025 format first, retired OFSI ConList second)
+    "id": ["Unique ID", "Group ID"], "n6": ["Name 6"], "n1": ["Name 1"], "n2": ["Name 2"], "n3": ["Name 3"], "n4": ["Name 4"], "n5": ["Name 5"],
+    "ntype": ["Name type", "Name Type", "Alias Type"], "regime": ["Regime Name", "Regime"], "kind": ["Individual, Entity, Ship", "Group Type"],
+    "info": ["Other Information"], "reasons": ["UK Statement of Reasons"], "a1": ["Address Line 1", "Address 1"], "a2": ["Address Line 2", "Address 2"],
+    "a3": ["Address Line 3", "Address 3"], "a4": ["Address Line 4", "Address 4"], "a5": ["Address Line 5", "Address 5"], "a6": ["Address Line 6", "Address 6"],
+    "post": ["Address Postal Code", "Post/Zip Code"], "country": ["Address Country", "Country"], "date": ["Date Designated", "UK Sanctions List Date Designated", "Listed On"],
+    "dob": ["D.O.B", "DOB"], "nat": ["Nationality(/ies)", "Nationality"], "nid": ["National Identifier number", "National Identification Number"],
+    "pass": ["Passport number", "Passport Number"], "pos": ["Position"], "tob": ["Town of birth", "Town of Birth"], "cob": ["Country of birth", "Country of Birth"],
+    "flag": ["Current believed flag of ship"], "imo": ["IMO number"], "parent": ["Parent Company"], "subs": ["Subsidiaries"],
+}
 def parse_uk(raw):
     text = raw.decode("utf-8-sig", errors="replace")
     lines = text.splitlines()
-    start = next((i for i, l in enumerate(lines[:5]) if "Group ID" in l or "Regime" in l), 1)
+    start = next((i for i, l in enumerate(lines[:10]) if ("Unique ID" in l or "Group ID" in l) and "Name 6" in l), 0)
     rd = csv.DictReader(io.StringIO("\n".join(lines[start:])))
+    hdr = {clean(h).lower(): h for h in (rd.fieldnames or [])}
+    col = {}
+    for k, names in UK_COLS.items():
+        for nm in names:
+            if nm.lower() in hdr: col[k] = hdr[nm.lower()]; break
+    if "id" not in col or "n6" not in col: raise ValueError("UK list: expected columns not found; header was " + ", ".join(list(hdr)[:12]))
+    g = lambda r, k: clean(r.get(col[k])) if k in col else ""
     groups = {}
     for r in rd:
-        g = clean(r.get("Group ID"))
-        if not g: continue
-        e = groups.setdefault(g, {"primary": "", "alias": [], "addr": [], "nat": [], "dob": [], "pob": [], "prog": set(), "type": "", "info": "", "pos": "", "ids": [], "date": ""})
-        nm = joinaddr(r.get("Name 6"), r.get("Name 1"), r.get("Name 2"), r.get("Name 3"), r.get("Name 4"), r.get("Name 5")).replace(",", "")
-        if (r.get("Alias Type") or "").lower().startswith("primary") and not e["primary"]: e["primary"] = nm
-        elif nm: e["alias"].append(nm)
-        gt = (r.get("Group Type") or "").lower()
+        gid = g(r, "id")
+        if not gid: continue
+        e = groups.setdefault(gid, {"primary": "", "alias": [], "addr": [], "nat": [], "dob": [], "pob": [], "prog": set(), "type": "", "info": "", "pos": "", "ids": [], "date": "", "flag": ""})
+        nm = joinaddr(g(r, "n6"), g(r, "n1"), g(r, "n2"), g(r, "n3"), g(r, "n4"), g(r, "n5")).replace(",", "") if g(r, "kind").lower().startswith("ind") \
+             else joinaddr(g(r, "n1"), g(r, "n2"), g(r, "n3"), g(r, "n4"), g(r, "n5"), g(r, "n6")).replace(",", "")
+        # individuals: surname is Name 6, so put it last for a natural order
+        if g(r, "kind").lower().startswith("ind"):
+            nm = joinaddr(g(r, "n1"), g(r, "n2"), g(r, "n3"), g(r, "n4"), g(r, "n5"), g(r, "n6")).replace(",", "")
+        nt = g(r, "ntype").lower()
+        if nt.startswith("primary name") and "variation" not in nt and not e["primary"]: e["primary"] = nm
+        elif nm and nm not in e["alias"]: e["alias"].append(nm)
+        gt = g(r, "kind").lower()
         e["type"] = "Individual" if gt.startswith("ind") else "Vessel" if gt.startswith("ship") else "Entity"
-        e["prog"].add(clean(r.get("Regime")))
-        e["info"] = e["info"] or clean(r.get("Other Information"))
-        e["pos"] = e["pos"] or clean(r.get("Position"))
-        e["date"] = e["date"] or clean(r.get("Listed On"))
-        a = joinaddr(r.get("Address 1"), r.get("Address 2"), r.get("Address 3"), r.get("Address 4"), r.get("Address 5"), r.get("Address 6"), r.get("Post/Zip Code"), r.get("Country"))
+        e["prog"].add(g(r, "regime"))
+        e["info"] = e["info"] or g(r, "info")
+        e["pos"] = e["pos"] or g(r, "pos")
+        e["date"] = e["date"] or g(r, "date")
+        e["flag"] = e["flag"] or g(r, "flag")
+        a = joinaddr(g(r, "a1"), g(r, "a2"), g(r, "a3"), g(r, "a4"), g(r, "a5"), g(r, "a6"), g(r, "post"), g(r, "country"))
         if a and a not in e["addr"]: e["addr"].append(a)
-        for n in re.split(r"[,;/]|\(\d\)", r.get("Nationality") or ""):
+        for n in re.split(r"[,;/]|\(\d+\)", g(r, "nat")):
             n = clean(n)
             if n and n not in e["nat"]: e["nat"].append(n)
-        d = clean(r.get("DOB"))
+        d = g(r, "dob")
         if d and d not in e["dob"]: e["dob"].append(d)
-        pb = joinaddr(r.get("Town of Birth"), r.get("Country of Birth"))
+        pb = joinaddr(g(r, "tob"), g(r, "cob"))
         if pb and pb not in e["pob"]: e["pob"].append(pb)
-        for k, lab in (("Passport Number", "Passport"), ("National Identification Number", "National ID")):
-            v = clean(r.get(k))
+        for k, lab in (("pass", "Passport"), ("nid", "National ID"), ("imo", "IMO")):
+            v = g(r, k)
             if v and f"{lab} {v}" not in e["ids"]: e["ids"].append(f"{lab} {v}")
+        for k, lab in (("parent", "Parent"), ("subs", "Subsidiaries")):
+            v = g(r, k)
+            if v and lab not in e["info"]: e["info"] = "; ".join(x for x in [e["info"], f"{lab}: {v}"] if x)
     out = []
-    for g, e in groups.items():
+    for gid, e in groups.items():
         name = e["primary"] or (e["alias"][0] if e["alias"] else "")
         if not name: continue
         alias = [a for a in e["alias"] if a != name]
         rem = "; ".join(x for x in [e["pos"], e["info"]] if x)
-        out.append(row("UK", g, name, e["type"], e["prog"], e["addr"], rem, alias, e["nat"], "; ".join(e["dob"]), "; ".join(e["pob"]), "; ".join(e["ids"]), "", e["date"]))
+        r0 = row("UK", gid, name, e["type"], e["prog"], e["addr"], rem, alias, e["nat"], "; ".join(e["dob"]), "; ".join(e["pob"]), "; ".join(e["ids"]),
+                 f"https://search-uk-sanctions-list.service.gov.uk/designations/{gid}", e["date"])
+        r0["vessel_flag"] = e["flag"]
+        out.append(r0)
     return out
 
 # ------------------------------------------------------------------ UN
@@ -171,13 +200,15 @@ def parse_au(raw):
             if any("Name of Individual" in v for v in vals): header = [clean(v) for v in vals]
             continue
         d = dict(zip(header, vals))
-        ref = clean(d.get("Reference"))
+        ref = re.sub(r"[a-zA-Z]+$", "", clean(d.get("Reference")).split(".")[0])   # "1000a" -> "1000"
         if not ref: continue
         e = groups.setdefault(ref, {"primary": "", "alias": [], "addr": [], "nat": [], "dob": [], "pob": [], "prog": set(), "type": "", "info": "", "date": ""})
         nm = clean(d.get("Name of Individual or Entity"))
-        if (d.get("Name Type") or "").lower().startswith("orig") and not e["primary"]: e["primary"] = nm
+        ntype = (d.get("Name Type") or "").lower()
+        if ntype.startswith("primary") and not e["primary"]: e["primary"] = nm
+        elif nm and "script" not in ntype: e["alias"].append(nm)
         elif nm: e["alias"].append(nm)
-        t = (d.get("Type") or "").lower(); e["type"] = "Individual" if t.startswith("ind") else "Entity"
+        t = (d.get("Type") or "").lower(); e["type"] = "Individual" if t.startswith(("ind", "per")) else "Vessel" if t.startswith("ves") else "Entity"
         for c in re.split(r"[;/]", d.get("Committees") or d.get("Listing Information") or ""):
             c = clean(c)
             if c: e["prog"].add(c[:40])
@@ -201,29 +232,36 @@ def parse_au(raw):
 
 # ------------------------------------------------------------------ CA
 def parse_ca(raw):
+    """Tags are bilingual, e.g. <Country-Pays>, <LastName-NomDeFamille>, <GivenName-Prenom>, <Entity-Entite>,
+    <Aliases-Alias>, <Schedule-Annexe>, <Item-NumeroDarticle>, <DateOfListing-DateDinscription>. Match on the English prefix."""
     root = ET.fromstring(raw)
+    def tx(el, prefix):
+        for ch in el:
+            tag = ch.tag.split("}")[-1]
+            if tag.lower().startswith(prefix.lower()):
+                return clean(ch.text or "")
+        return ""
     out = []
-    def tx(el, tag):
-        x = el.find(tag)
-        return clean(x.text) if x is not None and x.text else ""
     i = 0
     for rec in root.iter("record"):
         i += 1
+        country = tx(rec, "Country").split("/")[0].strip()
         ent = tx(rec, "Entity"); gn = tx(rec, "GivenName"); ln = tx(rec, "LastName")
-        country = tx(rec, "Country")
+        kind = tx(rec, "EntityOrShip") or tx(rec, "Type")
         if ent:
-            name, typ = ent, "Entity"
+            name, typ = ent, ("Vessel" if "ship" in kind.lower() or tx(rec, "ShipIMO") else "Entity")
         elif gn or ln:
             name, typ = f"{gn} {ln}".strip(), "Individual"
         else:
             continue
         alias = [clean(a) for a in re.split(r";|\n", tx(rec, "Aliases")) if clean(a)]
         prog = country or "Autonomous"
-        rem = "; ".join(x for x in [tx(rec, "Title"), tx(rec, "Schedule") and f"Schedule {tx(rec, 'Schedule')}", tx(rec, "Item") and f"Item {tx(rec, 'Item')}"] if x)
-        # Canada gives no address; the regime country is the best available placement, marked as such
-        out.append(row("CA", tx(rec, "Item") or i, name, typ, [prog], [], rem, alias, [country] if typ == "Individual" and country else [], tx(rec, "DateOfBirth"), "", "", "", tx(rec, "DateOfListing")))
-        if typ == "Entity" and country:
-            out[-1]["addresses"] = country
+        sched = tx(rec, "Schedule"); item = tx(rec, "Item")
+        rem = "; ".join(x for x in [tx(rec, "Title"), sched and f"Schedule {sched}", item and f"Item {item}"] if x)
+        r0 = row("CA", f"{prog}-{sched}-{item}".replace(" ", "") if item else i, name, typ, [prog], [country] if typ != "Individual" and country else [],
+                 rem, alias, [country] if typ == "Individual" and country else [], tx(rec, "DateOfBirth"), "", tx(rec, "ShipIMO") and "IMO " + tx(rec, "ShipIMO"), "",
+                 tx(rec, "DateOfListing"))
+        out.append(r0)
     return out
 
 PARSERS = {"EU": parse_eu, "UK": parse_uk, "UN": parse_un, "AU": parse_au, "CA": parse_ca}

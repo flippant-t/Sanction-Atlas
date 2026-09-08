@@ -117,7 +117,8 @@ EXTRA = {("RU", "moskva"): ("RU", "moscow"), ("RU", "st. petersburg"): ("RU", "s
          ("AE", "jebel ali"): ("AE", "dubai"), ("KP", "pyongyang"): ("KP", "pyongyang"),
          ("PA", "panama"): ("PA", "panama city"), ("GT", "guatemala"): ("GT", "guatemala city"),
          ("KW", "kuwait"): ("KW", "kuwait city"), ("MX", "mexico"): ("MX", "mexico city"),
-         ("SG", "singapore"): ("SG", "singapore"), ("BH", "bahrain"): ("BH", "manama")}
+         ("SG", "singapore"): ("SG", "singapore"), ("BH", "bahrain"): ("BH", "manama"),
+         ("CN", "kowloon"): ("HK", "kowloon"), ("CN", "wan chai"): ("HK", "hong kong"), ("CN", "tsim sha tsui"): ("HK", "hong kong"), ("CN", "sheung wan"): ("HK", "hong kong"), ("CN", "macau"): ("MO", "macau"), ("CN", "macao"): ("MO", "macau")}
 
 CITY_STATES = {"HK", "SG", "MO", "MC", "VA", "GI", "BH", "QA", "KW", "LU", "MT", "DJ"}
 # small offshore / secrecy hubs missing from the 15k-population gazetteer
@@ -158,6 +159,7 @@ def geocode(addr):
         if iso: ctoks = {i}; break
     # candidate city tokens: everything except the country tokens (but a city-state's name is also its city)
     cands = []
+    STREETY = re.compile(r"\b(rue|str|strasse|ul|ulitsa|prospekt|pr|via|calle|avenida|carrera|road|rd|street|st|avenue|ave|lane|ln|blvd|boulevard|highway|hwy|floor|fl|suite|ste|unit|room|rm|block|bldg|building|tower|plaza|po box|p o box|no|km)\b", re.I)
     for i, t in enumerate(toks):
         k = clean_tok(t)
         if not k: continue
@@ -166,13 +168,15 @@ def geocode(addr):
             if (len(toks) > 1 or iso in CITY_STATES) and EXTRA.get((iso, k), (iso, k)) in CITY:
                 cands.insert(0, k)   # lowest priority: real city tokens win
             continue
-        if country_iso(t): continue
+        t_iso = country_iso(t)
+        if t_iso and t_iso != iso: continue          # another country's name inside the address: not a city
+        # street lines ("8 Rue de la Bruyere") must not feed word-runs into the gazetteer: "bruyere" is not a city
+        if not (re.search(r"\d", t) or STREETY.search(t) or len(k.split()) > 4):
+            parts = k.split()
+            for n in (1, 2):          # shorter runs first; the list is scanned in reverse so longer matches win
+                for j in range(len(parts) - n + 1):
+                    cands.append(" ".join(parts[j:j + n]))
         cands.append(k)
-        # "City Province" -> try each word run too
-        parts = k.split()
-        for n in (2, 1):
-            for j in range(len(parts) - n + 1):
-                cands.append(" ".join(parts[j:j + n]))
     seen = set()
     for k in reversed(cands):
         if k in seen or len(k) < 3: continue
@@ -376,6 +380,28 @@ def build(rows):
         p["lat"] = loc["lat"] if loc else None
         p["lon"] = loc["lon"] if loc else None
 
+    # a country-specific program is the next best hint for a party with no address, nationality or flag
+    REGIME_CC = {"SYRIA": "SY", "CUBA": "CU", "VENEZUELA": "VE", "DPRK": "KP", "IRAN": "IR", "BELARUS": "BY", "RUSSIA": "RU", "LIBYA": "LY", "IRAQ": "IQ",
+        "YEMEN": "YE", "SOMALIA": "SO", "SOUTH SUDAN": "SS", "SUDAN": "SD", "DARFUR": "SD", "MALI": "ML", "DRCONGO": "CD", "CAR": "CF", "BURMA": "MM", "MYANMAR": "MM",
+        "NICARAGUA": "NI", "ZIMBABWE": "ZW", "LEBANON": "LB", "ETHIOPIA": "ET", "HK-": "HK", "HAITI": "HT", "AFGHANISTAN": "AF", "UKRAINE": "UA", "CRIMEA": "UA",
+        "TALIBAN": "AF", "GUINEA-BISSAU": "GW", "TUNISIA": "TN", "TURKIYE": "TR", "MOLDOVA": "MD", "CHINESE": "CN", "CMIC": "CN",
+        # EU programme codes and UN list names
+        "EU:YEM": "YE", "EU:SYR": "SY", "EU:LBY": "LY", "EU:IRQ": "IQ", "EU:AFG": "AF", "EU:SOM": "SO", "EU:MLI": "ML", "EU:CAF": "CF", "EU:COD": "CD", "EU:SSD": "SS",
+        "EU:SDN": "SD", "EU:BDI": "BI", "EU:GIN": "GN", "EU:GNB": "GW", "EU:HTI": "HT", "EU:NIC": "NI", "EU:VEN": "VE", "EU:MMR": "MM", "EU:BLR": "BY", "EU:RUS": "RU",
+        "EU:UKR": "UA", "EU:PRK": "KP", "EU:IRN": "IR", "EU:TUN": "TN", "EU:ZWE": "ZW", "EU:TUR": "TR", "EU:MDA": "MD", "EU:BIH": "BA", "EU:LBN": "LB", "EU:EGY": "EG", "EU:NER": "NE",
+        "UN:DPRK": "KP", "UN:SOMALIA": "SO", "UN:LIBYA": "LY", "UN:YEMEN": "YE", "UN:IRAQ": "IQ", "UN:MALI": "ML", "UN:SOUTH SUDAN": "SS", "UN:CAR": "CF", "UN:DRC": "CD",
+        "UN:SUDAN": "SD", "UN:HAITI": "HT", "UN:GUINEA-BISSAU": "GW", "UN:TALIBAN": "AF"}
+    for p in parties:
+        if p["cc"]: continue
+        for g in p["p"]:
+            gu = g.upper()
+            hit = REGIME_CC.get(gu) or next((cc for k, cc in REGIME_CC.items() if ":" not in k and gu.startswith(k)), None) \
+                  or next((cc for k, cc in REGIME_CC.items() if ":" in k and gu.startswith(k)), None)
+            if hit:
+                p["cc"] = hit
+                p["a"].append({"raw": f"(program country: {COUNTRIES.get(hit, {}).get('name', hit)})", "cc": hit, "lat": None, "lon": None, "city": None, "fb": True})
+                break
+
     # last resort: a party with no location at all sits next to the party it is "Linked To"
     by_name0 = {}
     for p in parties:
@@ -397,7 +423,6 @@ def build(rows):
     # edges
     by_name = {}
     for p in parties:
-        if not p["cc"]: continue
         by_name.setdefault(name_key(p["n"]), p)
         for a in p["alt"]: by_name.setdefault(name_key(a), p)
     edges = []
@@ -432,6 +457,9 @@ def diff(parties, today):
     if os.path.exists(path):
         with open(path) as f: state = json.load(f)
     seen = state["seen"]; now_ids = {p["id"]: p for p in parties}
+    prev_auths = set(state.get("auths", []))
+    now_auths = {a for p in parties for a in p["au"]}
+    onboarding = now_auths - prev_auths if prev_auths else set()
     added, removed = [], []
     for pid, p in now_ids.items():
         if pid not in seen:
@@ -445,6 +473,7 @@ def diff(parties, today):
     first_run = not state.get("last_run")
     if not first_run:
         for pid in added:
+            if onboarding and set(now_ids[pid]["au"]) <= onboarding: continue   # first load of a new list, not a new designation
             r = seen[pid]; state["events"].append({"d": today, "op": "+", "id": pid, "n": r["n"], "s": r["s"], "p": r["p"], "cc": r["cc"], "t": r["t"]})
         for pid in removed:
             r = seen[pid]; state["events"].append({"d": today, "op": "-", "id": pid, "n": r["n"], "s": r["s"], "p": r["p"], "cc": r["cc"], "t": r["t"]})
@@ -456,6 +485,7 @@ def diff(parties, today):
         state["series"][-1]["n"] = len(parties)
     state["series"] = state["series"][-400:]
     state["last_run"] = today
+    state["auths"] = sorted(now_auths | prev_auths)
     with open(path, "w") as f: json.dump(state, f, separators=(",", ":"))
     return {"events": sorted(state["events"], key=lambda e: e["d"], reverse=True), "series": state["series"],
             "first_run": first_run, "added_today": len(added), "removed_today": len(removed)}
