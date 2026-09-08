@@ -126,7 +126,7 @@
 
     <div class="sec">
       <h2>Find</h2>
-      <input class="search" id="q" placeholder="Name, alias, vessel, program" autocomplete="off">
+      <input class="search" id="q" placeholder="Name, alias, vessel, program  (press / to focus)" autocomplete="off">
       <ul class="hits" id="hits"></ul>
     </div>
 
@@ -138,6 +138,7 @@
         <label><input type="radio" name="mode" value="changes">Activity<small>only what was added recently</small></label>
         <label><input type="radio" name="mode" value="compare">Authorities<small>where two lists agree and differ</small></label>
       </div>
+      <div class="muted" id="showing" style="margin-top:6px"></div>
       <div id="modeOpts">
         <select id="cmp" class="search" style="padding:5px 8px;font-size:12px;margin-top:6px;display:none"><option value="">Compare two authorities…</option></select>
         <div class="muted" id="cmpNote" style="margin-top:6px;display:none"></div>
@@ -511,6 +512,7 @@ function update(){
   CBUCKETS=[...cm.values()].sort((a,b)=>b.n-a.n);for(const b of CBUCKETS){b.top=Object.entries(b.src).sort((x,y)=>y[1]-x[1])[0][0];if(compare)b.cmp=Object.entries(b.cm).sort((x,y)=>y[1]-x[1])[0][0];}
   if(selected&&!VISIBLE.includes(selected)){selected=null;closeDrawer();}
   buildQT();draw();writeURL();
+  document.getElementById('showing').textContent=`Showing ${VISIBLE.length.toLocaleString()} of ${PARTIES.length.toLocaleString()} parties`+(VEDGES.length?`, ${VEDGES.length.toLocaleString()} lines`:'');
 }
 ['lnLink','lnFoot','lnNat','onlyLinked'].forEach(id=>document.getElementById(id).addEventListener('change',update));
 document.getElementById('choro').addEventListener('change',draw);document.getElementById('shadeMode').addEventListener('change',()=>{renderLegend();draw();});
@@ -588,7 +590,7 @@ function openCountry(cc){
   const recent=(CHANGES.events||[]).filter(e=>e.cc===cc).slice(0,12);
   const linked=PARTIES.filter(p=>p.cc===cc&&p.edges.some(e=>e.b)).sort((x,y)=>y.edges.length-x.edges.length).slice(0,8);
   b.innerHTML=`<h3>${esc(name)}</h3><div class="kind">Country overview</div>
-  <div class="tools"><button class="btn" id="cZoom">Zoom in</button><button class="btn" id="cFilter">Only this country's programs</button><a class="btn" href="countries/${cc.toLowerCase()}.html">Full page</a></div>
+  <div class="tools"><button class="btn" id="cZoom">Zoom in</button><button class="btn" id="cFilter">Filter to its programs</button><button class="btn" id="cShare">Copy link</button><a class="btn" href="countries/${cc.toLowerCase()}.html">Full page</a></div>
   <div class="stats"><div><b>${c.n.toLocaleString()}</b>parties</div><div><b>${c.au.size}</b>authorities</div><div><b>${c.progs.size}</b>programs</div><div><b>${c.ch}</b>changes, 30 days</div><div><b>${c.score}</b>intensity index</div></div>
   <div class="muted" style="margin:-4px 0 12px">Intensity index is this site's composite of party count, program count and recent activity, scaled 0 to 10. A visualisation aid, not a legal assessment.</div>
   <h4>Listed by</h4>${aus.map(([k,n])=>bar(AUTH_NAME[k]||k,n,aus[0][1])).join('')}
@@ -599,6 +601,7 @@ function openCountry(cc){
   ${linked.length?`<h4>Most connected</h4><ul class="links">${linked.map(p=>`<li data-i="${esc(p.id)}">${esc(p.n)}<span>${esc(p.t)}, ${p.edges.filter(e=>e.b).length} links</span></li>`).join('')}</ul>`:''}
   ${recent.length?`<h4>Recent changes</h4><ul class="links">${recent.map(e=>`<li data-i="${esc(e.id)}"><span class="op ${e.op==='+'?'plus':'minus'}" style="margin:0 6px 0 0">${e.op}</span>${esc(e.n)}<span>${esc(e.d)}</span></li>`).join('')}</ul>`:''}`;
   b.querySelector('#cZoom').onclick=()=>zoomTo(centroidByISO.get(cc)||[0,0],3);
+  b.querySelector('#cShare').onclick=()=>{const q=new URLSearchParams(location.hash.slice(1));q.delete('p');q.set('c',cc.toLowerCase());const u=location.origin+location.pathname+'#'+q.toString();navigator.clipboard.writeText(u).then(()=>toast('Link copied'),()=>toast(u));};
   b.querySelector('#cFilter').onclick=()=>{filters.prog=new Set(c.progs.keys());renderProgs();update();toast('Programs filtered to '+name);};
   b.querySelectorAll('li[data-i]').forEach(li=>li.onclick=()=>{const q=BYID.get(li.dataset.i);if(q&&q.x!=null)select(q,true);});
   selected=null;d.classList.add('open');d.scrollTop=0;draw();drawOver();
@@ -612,7 +615,7 @@ function openDrawer(p){
   const add=(k,v,small)=>{if(v&&String(v).trim())rows.push(`<dt>${esc(k)}</dt><dd class="${small?'small':''}">${v}</dd>`);};
   add('Listed by',(p.au||[]).map(a=>`<span class="chip" style="border-color:${a==='US'?'#e9b44c':SRC_COLOR[a]}">${esc(AUTH_NAME[a]||a)}</span>`).join(' ')+(p.au&&p.au.length>1?'<div class="muted">Matched across lists by name; check each record.</div>':''));
   add('Programs',esc((p.p||[]).join(', ')));add('Address',(p.a||[]).map(esc).join('<br>'));add('Title',esc(p.ti));add('Also known as',esc((p.alt||[]).join('; ')),true);
-  add('Born',esc(p.dob));add('Nationality',esc((p.nat||[]).join(', ')));add('Place of birth',esc(p.pob));add('Vessel',esc(p.ves));add('IDs',esc(p.ids),true);add('Listed',esc(p.listed));add('Remarks',esc(p.rem),true);
+  add('Born',esc(p.dob));add('Nationality',esc((p.nat||[]).join(', ')));add('Place of birth',esc(p.pob));add('Vessel',esc(p.ves));add('IDs',esc(p.ids),true);add('Listed',esc(p.listed));add('Remarks',p.rem&&p.rem.length>420?`<span class="clip">${esc(p.rem.slice(0,400))}… <a href="#" class="morelink">show all</a></span><span class="full" style="display:none">${esc(p.rem)}</span>`:esc(p.rem),true);
   if(p.recs)add('Records',p.recs.map(r=>`<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(AUTH_NAME[r.au]||r.au)}</a>${r.listed?' <span class="muted">'+esc(r.listed)+'</span>':''}`).join('<br>'));
   else if(p.url)add('Source',`<a href="${esc(p.url)}" target="_blank" rel="noopener">Official record</a>`);
   const others=[],seen=new Set();
@@ -625,6 +628,7 @@ function openDrawer(p){
   if(p.cc)b.querySelector('#cty').onclick=()=>openCountry(p.cc);
   b.querySelector('#share').onclick=()=>{navigator.clipboard.writeText(location.href).then(()=>toast('Link copied'),()=>toast(location.href));};
   b.querySelectorAll('li[data-i]').forEach(li=>li.onclick=()=>{const q=BYID.get(li.dataset.i);if(q)select(q,true);});
+  const ml=b.querySelector('.morelink');if(ml)ml.onclick=e=>{e.preventDefault();b.querySelector('.clip').style.display='none';b.querySelector('.full').style.display='';};
   if(hasNet)drawNet(p);
   d.classList.add('open');d.scrollTop=0;
 }
@@ -652,8 +656,8 @@ function drawNet(root){
 const qEl=document.getElementById('q'),hitsEl=document.getElementById('hits');
 qEl.addEventListener('input',()=>{
   const q=qEl.value.trim().toLowerCase();hitsEl.innerHTML='';if(q.length<2)return;const out=[];
-  for(const p of PARTIES){if(p.x==null)continue;if(p.n.toLowerCase().includes(q)||(p.alt||[]).some(a=>a.toLowerCase().includes(q))||(p.p||[]).some(g=>g.toLowerCase().includes(q))){out.push(p);if(out.length>=40)break;}}
-  for(const p of out){const li=document.createElement('li');li.tabIndex=0;li.innerHTML=`<span class="nm"></span><span class="cty"></span>`;li.querySelector('.nm').textContent=p.n;li.querySelector('.cty').textContent=p.city||nameByISO[p.cc]||'';li.onclick=()=>select(p,true);li.onkeydown=e=>{if(e.key==='Enter')select(p,true);};hitsEl.appendChild(li);}
+  for(const p of PARTIES){if(p.n.toLowerCase().includes(q)||(p.alt||[]).some(a=>a.toLowerCase().includes(q))||(p.p||[]).some(g=>g.toLowerCase().includes(q))){out.push(p);if(out.length>=40)break;}}
+  for(const p of out){const li=document.createElement('li');li.tabIndex=0;li.innerHTML=`<span class="nm"></span><span class="cty"></span>`;li.querySelector('.nm').textContent=p.n;li.querySelector('.cty').textContent=p.city||nameByISO[p.cc]||'no location';li.onclick=()=>select(p,true);li.onkeydown=e=>{if(e.key==='Enter')select(p,true);};hitsEl.appendChild(li);}
   if(!out.length){const li=document.createElement('li');li.style.color='var(--ink-3)';li.textContent='No match';hitsEl.appendChild(li);}
 });
 
@@ -730,7 +734,11 @@ function endStory(){story=null;document.getElementById('story').style.display='n
 
 // ---------- boot ----------
 async function boot(){
-  const [meta,data,changes,world,worldLo]=await Promise.all([fetch('data/meta.json').then(r=>r.json()),fetch('data/parties.json').then(r=>r.json()),fetch('data/changes.json').then(r=>r.json()).catch(()=>({events:[],series:[]})),fetch('vendor/countries-50m.json').then(r=>r.json()),fetch('vendor/countries-110m.json').then(r=>r.json())]);
+  const loadingEl=document.getElementById('loading');
+  const bigFetch=async(url)=>{const r=await fetch(url);const total=+r.headers.get('content-length')||0;if(!r.body||!total)return r.json();const reader=r.body.getReader();const chunks=[];let got=0;
+    while(true){const {done,value}=await reader.read();if(done)break;chunks.push(value);got+=value.length;loadingEl.textContent=`Loading the list… ${(got/1048576).toFixed(1)} of ${(total/1048576).toFixed(1)} MB`;}
+    const blob=new Blob(chunks);return JSON.parse(await blob.text());};
+  const [meta,data,changes,world,worldLo]=await Promise.all([fetch('data/meta.json').then(r=>r.json()),bigFetch('data/parties.json'),fetch('data/changes.json').then(r=>r.json()).catch(()=>({events:[],series:[]})),fetch('vendor/countries-50m.json').then(r=>r.json()),fetch('vendor/countries-110m.json').then(r=>r.json())]);
   META=meta;PARTIES=data.parties;EDGES=data.edges;CHANGES=changes;for(const p of PARTIES)BYID.set(p.id,p);
   setupGeo(world,worldLo);place();
   filters.src=new Set(Object.keys(META.sources));filters.type=new Set(Object.keys(META.types));filters.prog=new Set(META.programs.map(x=>x[0]));filters.au=new Set(Object.keys(META.authorities||{US:1}));
@@ -752,9 +760,14 @@ async function boot(){
    document.getElementById('yrNote').textContent=`Listing dates are published for ${(META.dated||ys.length).toLocaleString()} of ${META.parties.toLocaleString()} parties (mostly the EU, UK, UN, Australian and Canadian lists; OFAC does not publish them in this feed). Undated parties are shown regardless of year when the box is ticked.`;}
   renderStories();
   renderFeed();document.getElementById('loading').style.display='none';resize();readURL();
-  window.addEventListener('hashchange',()=>{const q=new URLSearchParams(location.hash.slice(1));const p=BYID.get(q.get('p'));if(p&&p!==selected&&p.x!=null)select(p,true);});
+  window.addEventListener('hashchange',()=>{if(urlLock)return;const q=new URLSearchParams(location.hash.slice(1));const p=BYID.get(q.get('p'));if(p&&p!==selected){select(p,true);return;}const c=(q.get('c')||'').toUpperCase();if(c&&COUNTRY_STATS.has(c)){openCountry(c);zoomTo(centroidByISO.get(c)||[0,0],3);}});
 }
 window.addEventListener('resize',resize);
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){if(story){endStory();return;}if(selected||document.getElementById('drawer').classList.contains('open')){selected=null;closeDrawer();draw();drawOver();writeURL();}const h=document.getElementById('hint');if(h)h.remove();}
+  if(e.key==='Enter'&&document.activeElement===qEl){const li=hitsEl.querySelector('li');if(li)li.click();}
+  if(e.key==='/'&&document.activeElement!==qEl&&document.activeElement.tagName!=='INPUT'){e.preventDefault();qEl.focus();qEl.select();}
+});
 boot().catch(err=>{document.getElementById('loading').textContent='Could not load data: '+err.message;});
 </script>
 </body>
