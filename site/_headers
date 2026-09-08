@@ -4,3 +4,7 @@
 /data/*
   Access-Control-Allow-Origin: *
   Cache-Control: public, max-age=3600
+/sitemap.xml
+  Content-Type: application/xml; charset=utf-8
+/api/v1/feed.xml
+  Content-Type: application/rss+xml; charset=utf-8
