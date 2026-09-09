@@ -82,30 +82,11 @@ def load(name):
             with open(os.path.join(DATA, part), encoding="utf-8") as f: obj["parties"] += json.load(f)
     return obj
 
-CSS = """
-:root{--ocean:#0e1726;--ink:#e6e1d6;--ink-2:#a39d90;--ink-3:#6b6659;--line:#26344a;--sdn:#e9b44c}
-*{box-sizing:border-box}body{margin:0;background:var(--ocean);color:var(--ink);font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;font-size:15px;line-height:1.5}
-a{color:var(--sdn)}main{max-width:820px;margin:0 auto;padding:28px 20px 60px}
-header{border-bottom:1px solid var(--line);padding:14px 20px;font-size:14px;display:flex;gap:18px;flex-wrap:wrap}header a{color:var(--ink-2);text-decoration:none}header a.brand{color:var(--ink);font-size:17px}
-h1{font-size:28px;font-weight:400;margin:0 0 6px;line-height:1.15}h2{font-size:14px;font-weight:600;letter-spacing:.06em;color:var(--ink-2);margin:28px 0 8px}
-.sub{color:var(--ink-2);margin:0 0 18px}.cta{display:inline-block;background:var(--sdn);color:#1a1408;padding:8px 14px;border-radius:4px;text-decoration:none;font-weight:500}
-table{border-collapse:collapse;width:100%;font-size:14px}td,th{text-align:left;padding:6px 8px;border-top:1px solid var(--line);vertical-align:top}th{color:var(--ink-3);font-weight:500}td.n{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink-2);white-space:nowrap}
-ul.plain{list-style:none;padding:0;margin:0}ul.plain li{padding:5px 0;border-top:1px solid var(--line)}.meta{color:var(--ink-3);font-size:12px}
-dl{display:grid;grid-template-columns:130px 1fr;gap:6px 12px;font-size:14px}dt{color:var(--ink-3)}dd{margin:0;word-break:break-word}
-footer{color:var(--ink-3);font-size:12px;border-top:1px solid var(--line);padding:16px 20px;max-width:820px;margin:0 auto}
-.cols{columns:2;column-gap:30px}@media(max-width:600px){.cols{columns:1}dl{grid-template-columns:1fr}}
-"""
+import theme
 
-def page(title, desc, body, rel, canonical, extra_head=""):
-    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{esc(title)} · SanctionScope</title><meta name="description" content="{esc(desc)}"><link rel="canonical" href="{esc(canonical)}">
-<meta property="og:title" content="{esc(title)}"><meta property="og:description" content="{esc(desc)}"><meta property="og:image" content="{esc(rel)}og.png">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%230e1726'/><circle cx='16' cy='16' r='5' fill='%23e9b44c'/></svg>">
-<style>{CSS}</style>{extra_head}</head><body>
-<header><a class="brand" href="{rel}">SanctionScope</a><a href="{rel}">Map</a><a href="{rel}screen.html">Screen a list</a><a href="{rel}programs/">Programs</a><a href="{rel}countries/">Countries</a><a href="{rel}parties/">Parties</a><a href="{rel}api/">API</a><a href="{rel}about.html">About</a></header>
-<main>{body}</main>
-<footer>Data: US Consolidated Screening List (OFAC, BIS, State), EU, UK OFSI, UN Security Council, Australia DFAT and Canada SEMA consolidated lists. Cross-list matching is by name and approximate. Rebuilt nightly. Not legal advice; confirm against the official record before acting.</footer>
-</body></html>"""
+def page(title, desc, body, rel, canonical, extra_head="", on=""):
+    return theme.shell(title, desc, body, rel, canonical, on=on, built=_BUILT.get("d", ""), extra_head=extra_head)
+_BUILT = {}
 
 def write(path, content):
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -122,7 +103,7 @@ def build_pages(site_url):
     parties, edges = data["parties"], data["edges"]
     byid = {p["id"]: p for p in parties}
     iso_name = meta["iso_name"]
-    today = meta["date"]
+    today = meta["date"]; _BUILT["d"] = today
 
     # link degree
     deg = Counter(); nbrs = defaultdict(list)
@@ -173,7 +154,7 @@ def build_pages(site_url):
         urls.append(f"programs/{s}/"); prog_rows.append((code, name, len(plist), s))
     body = f"""<h1>Sanctions programs</h1><p class="sub">{len(prog_rows)} programs on the Consolidated Screening List, {meta['parties']:,} parties in total.</p>
 <table><tr><th>Program</th><th>What it is</th><th class="n">Parties</th></tr>{''.join(f'<tr><td><a href="{s}/">{esc(c)}</a></td><td>{esc(n)}</td><td class="n">{k:,}</td></tr>' for c,n,k,s in prog_rows)}</table>"""
-    write(os.path.join(SITE, "programs", "index.html"), page("Sanctions programs", "Every OFAC, BIS and State Department sanctions program with party counts.", body, "../", f"{site_url}programs/"))
+    write(os.path.join(SITE, "programs", "index.html"), page("Sanctions programs", "Every OFAC, BIS and State Department sanctions program with party counts.", body, "../", f"{site_url}programs/", on="Programs"))
     urls.append("programs/")
 
     # ---------------- countries
@@ -198,7 +179,7 @@ def build_pages(site_url):
         write(os.path.join(SITE, "countries", f"{cc.lower()}.html"), page(f"Sanctioned parties in {name}", f"{len(plist):,} US-sanctioned or export-controlled parties located in {name}: programs, cities, most connected entities. Updated nightly.", body, rel, f"{site_url}countries/{cc.lower()}.html"))
         urls.append(f"countries/{cc.lower()}.html"); c_rows.append((cc, name, len(plist)))
     body = f"""<h1>Countries</h1><p class="sub">Where the {meta['placed']:,} placeable parties sit.</p><div class="cols"><ul class="plain">{''.join(f'<li><a href="{cc.lower()}.html">{esc(n)}</a> <span class="meta">{k:,}</span></li>' for cc,n,k in c_rows)}</ul></div>"""
-    write(os.path.join(SITE, "countries", "index.html"), page("Sanctioned parties by country", "US sanctions and export-control list parties by country.", body, "../", f"{site_url}countries/"))
+    write(os.path.join(SITE, "countries", "index.html"), page("Sanctioned parties by country", "US sanctions and export-control list parties by country.", body, "../", f"{site_url}countries/", on="Countries"))
     urls.append("countries/")
 
     # ---------------- parties
@@ -225,7 +206,7 @@ def build_pages(site_url):
         urls.append(f"parties/{p['pg']}.html")
     body = f"""<h1>Most connected parties</h1><p class="sub">{len(paged):,} parties with at least {PARTY_PAGE_MIN_LINKS} "Linked To" relationships on the list.</p>
 <ul class="plain">{''.join(f'<li><a href="{p["pg"]}.html">{esc(p["n"])}</a> <span class="meta">{esc(p["t"])}, {esc(p.get("city") or iso_name.get(p.get("cc"),""))}, {deg[p["id"]]} links</span></li>' for p in paged)}</ul>"""
-    write(os.path.join(SITE, "parties", "index.html"), page("Most connected sanctioned parties", "Sanctioned entities and individuals ranked by how many other listed parties they are linked to.", body, "../", f"{site_url}parties/"))
+    write(os.path.join(SITE, "parties", "index.html"), page("Most connected sanctioned parties", "Sanctioned entities and individuals ranked by how many other listed parties they are linked to.", body, "../", f"{site_url}parties/", on="Parties"))
     urls.append("parties/")
 
     # ---------------- about / trust page
@@ -235,7 +216,8 @@ def build_pages(site_url):
     auth = meta.get("authorities", {})
     inf = Counter(p.get("inf") for p in parties if p.get("inf"))
     n_multi = meta.get("multi_listed", 0)
-    body = f"""<h1>About SanctionScope</h1><p class="sub">What this is, where the data comes from, and what we do to it. Built as an independent project; not affiliated with any government.</p>
+    body = f"""<h1>About SanctionScope</h1><p class="lede">Where the data comes from, what we do to it, and what the site does and does not claim. An independent project, not affiliated with any government.</p>
+<div class="stats"><div class="stat"><b>{meta['parties']:,}</b><span>parties</span></div><div class="stat"><b>{sum(1 for v in auth.values() if v.get('ok'))}</b><span>authorities loaded</span></div><div class="stat"><b>{n_multi:,}</b><span>on more than one list</span></div><div class="stat"><b>{meta['with_city']:,}</b><span>placed to a city</span></div></div>
 <h2>Sources, as of this build ({today})</h2>
 <table><tr><th>Authority</th><th>List</th><th class="n">Records</th><th>Status</th></tr>{''.join(f'<tr><td>{esc(AUTH_NAME.get(a,a))}</td><td>{esc(AUTH_LONG.get(a,""))}</td><td class="n">{v.get("n",0):,}</td><td>{"loaded" if v.get("ok") else "failed: " + esc(v.get("error","")[:80])}</td></tr>' for a, v in auth.items())}</table>
 <p class="meta">Every list is downloaded fresh from the publishing authority each night. If a download or parse fails, that authority is skipped for the night and shown here and on the map as failed; nothing stale is silently kept beyond the previous night's copy.</p>
@@ -247,11 +229,34 @@ def build_pages(site_url):
 <p><b>Change tracking.</b> Additions and removals are detected by comparing each night's build with the previous one, starting from the day the site went live. Designation dates published by the EU, UK, UN, Australian and Canadian lists are shown where available; OFAC does not publish them in the feed we use.</p>
 <h2>What this is not</h2>
 <p>Not legal advice, not a compliance tool of record, and not a substitute for the official lists. A name match here means "look closer", never "this is the same person". Confirm against the official record, linked from every party, before acting.</p>
-<h2>Reuse</h2>
-<p>The source lists are public government publications. The merged dataset is released under CC0 through the <a href="{site_url}api/">API</a>. Attribution is appreciated, not required.</p>
-<h2>Contact</h2><p>Corrections and questions: open an issue on the project repository, or use the address on the API page.</p>"""
-    write(os.path.join(SITE, "about.html"), page("About", "Where SanctionScope's data comes from, how the six sanctions lists are merged and placed on the map, and what the site does and does not claim.", body, "", f"{site_url}about.html"))
+<h2>Reuse and attribution</h2>
+<p>The source lists are public government publications. The merged dataset is released under CC0 through the <a href="{site_url}api/">API</a>. Attribution to SanctionScope is appreciated, not required.</p>
+<p class="small">Source acknowledgements: US Consolidated Screening List, International Trade Administration, US Department of Commerce. EU Consolidated Financial Sanctions List, European Commission, Directorate-General for Financial Stability, Financial Services and Capital Markets Union. UK Sanctions List, Foreign, Commonwealth and Development Office, used under the Open Government Licence v3.0. UN Security Council Consolidated List, United Nations. Consolidated List, Australian Department of Foreign Affairs and Trade, CC BY 4.0. Consolidated Canadian Autonomous Sanctions List, Global Affairs Canada, Open Government Licence Canada. City coordinates from GeoNames, CC BY 4.0.</p>
+<h2>Contact</h2><p>Corrections and questions: <a href="mailto:hello@sanctionscope.com">hello@sanctionscope.com</a>. See also the <a href="{site_url}terms.html">terms of service</a> and <a href="{site_url}privacy.html">privacy policy</a>.</p>"""
+    write(os.path.join(SITE, "about.html"), page("About", "Where SanctionScope's data comes from, how the six sanctions lists are merged and placed on the map, and what the site does and does not claim.", body, "", f"{site_url}about.html", on="About"))
     urls.append("about.html")
+
+    # ---------------- terms + privacy
+    terms = f"""<h1>Terms of service</h1><p class="lede">Plain-language terms for using sanctionscope.com and its API. Last updated {today}.</p>
+<h2>What SanctionScope is</h2><p>SanctionScope is a reference and research tool. It republishes, merges and visualises sanctions and export-control lists published by government authorities. It is not legal advice, not a compliance system of record, and not a substitute for the official lists or for professional advice. A name match on this site means only that a listed name resembles the name you searched; it does not establish that they are the same person or entity.</p>
+<h2>Accuracy and warranty</h2><p>The data is provided as is and as available. We rebuild it nightly from the official sources but do not guarantee that it is complete, current, correctly merged or correctly placed on the map. Cross-list matching and location inference are automated and approximate, and are labelled as such. You are responsible for verifying any result against the official record, which is linked from every party, before relying on it.</p>
+<h2>Limitation of liability</h2><p>To the fullest extent permitted by law, SanctionScope and its operator are not liable for any loss, damage, cost or claim arising from use of or reliance on the site, the API or the data, including decisions to transact or not transact with any party, regulatory outcomes, or business interruption. Our total liability to you for any claim is limited to the amount you paid us in the twelve months before the claim.</p>
+<h2>Free use</h2><p>The site, the in-browser screener and the free API tier may be used without an account, at your own risk, subject to reasonable request volumes. We may rate-limit or block abusive traffic.</p>
+<h2>API Pro subscription</h2><p>API Pro is a monthly subscription billed through Stripe. You receive an API key that raises the request limits described on the <a href="{site_url}api/">API page</a>. Keys are personal to the subscriber and must not be shared or resold. You may cancel at any time through the <a href="{site_url}api/portal">billing portal</a>; access continues until the end of the paid period. Fees are non-refundable except where required by law. Prices are shown before any applicable tax, which Stripe calculates at checkout. We may change prices with 30 days' notice by email.</p>
+<h2>Acceptable use</h2><p>You may not use the site or API to harass, defame or discriminate against any person, to build a competing sanctions-list product by bulk copying the merged data while representing it as your own, or in any way that breaks the law. The underlying merged dataset is released under CC0; these terms govern use of the service, not ownership of public data.</p>
+<h2>Changes and termination</h2><p>We may change the service, these terms or the data sources at any time. We may suspend keys that breach these terms. Material changes to the terms take effect 30 days after being posted here.</p>
+<h2>Governing law</h2><p>These terms are governed by the laws of the State of Florida, United States, without regard to conflict-of-law rules. Disputes will be brought in the courts of that state.</p>
+<h2>Contact</h2><p><a href="mailto:hello@sanctionscope.com">hello@sanctionscope.com</a></p>"""
+    write(os.path.join(SITE, "terms.html"), page("Terms of service", "Terms for using SanctionScope and its API: what the service is, accuracy, liability, subscriptions and acceptable use.", terms, "", f"{site_url}terms.html"))
+    privacy = f"""<h1>Privacy policy</h1><p class="lede">What we collect, which is very little, and why. Last updated {today}.</p>
+<h2>What we do not collect</h2><p>The site sets no cookies of its own and runs no analytics or advertising scripts. Names you type into the in-browser screener are processed on your own device and are never sent to us. Names sent to the screening API are processed in memory to produce a response and are not stored or logged beyond the ordinary short-lived request logs of our hosting provider.</p>
+<h2>What we collect from API Pro subscribers</h2><p>When you subscribe, Stripe collects your email, payment details and billing address under <a href="https://stripe.com/privacy">Stripe's privacy policy</a>; we never see your card number. Stripe passes us your email address and a customer identifier, which we store together with your API key so that we can issue, check and deactivate the key. We keep this for as long as you have an account and for up to 90 days after cancellation, then delete it. We use your email only for service messages such as price changes or outages; no marketing.</p>
+<h2>Hosting and processors</h2><p>The site is served by Cloudflare, which processes visitor IP addresses to deliver content and prevent abuse under <a href="https://www.cloudflare.com/privacypolicy/">Cloudflare's privacy policy</a>. Payments are processed by Stripe. Nobody else receives your data.</p>
+<h2>Data about listed parties</h2><p>The names, addresses and other details of sanctioned parties shown on this site are republished from official government sanctions lists in the public interest. If you believe a record about you is inaccurate, the correction has to be made by the listing authority; each record links to its official source. We will correct errors we introduce, such as a wrong merge or placement, on request.</p>
+<h2>Your rights</h2><p>You can ask what we hold about you, ask us to delete it, or cancel your subscription, by emailing <a href="mailto:hello@sanctionscope.com">hello@sanctionscope.com</a>. If you are in the EU, UK or California you have additional statutory rights, which we will honour on request.</p>
+<h2>Changes</h2><p>Changes to this policy are posted here with a new date.</p>"""
+    write(os.path.join(SITE, "privacy.html"), page("Privacy policy", "What SanctionScope collects and does not collect, how API subscriber data is handled, and your rights.", privacy, "", f"{site_url}privacy.html"))
+    urls += ["terms.html", "privacy.html"]
 
     # ---------------- sitemap + robots
     if site_url:

@@ -20,7 +20,7 @@
   html,body{height:100%;margin:0;background:var(--ocean);color:var(--ink);font-family:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;font-size:14px;line-height:1.45}
   button,input,select,label{font:inherit}
   a{color:var(--sdn)}
-  #topnav{height:44px;display:flex;align-items:center;gap:18px;padding:0 18px;border-bottom:1px solid var(--line);background:var(--panel);font-size:14px}#topnav a{color:var(--ink-2);text-decoration:none}#topnav a:hover,#topnav a.on{color:var(--ink)}#topnav .brand{color:var(--ink);font-size:17px;margin-right:6px}#topnav .grow{flex:1}#navstamp{color:var(--ink-3);font-size:12px}
+  #topnav{height:44px;display:flex;align-items:center;gap:18px;padding:0 18px;border-bottom:1px solid var(--line);background:var(--panel);font-size:14px}#topnav a{color:var(--ink-2);text-decoration:none}#topnav a:hover,#topnav a.on{color:var(--ink)}#topnav .brand{color:var(--ink);font-size:17px;margin-right:6px}#topnav .cta{background:var(--sdn);color:#1a1408;padding:5px 12px;border-radius:5px;font-weight:500;margin-left:12px}#topnav .cta:hover{background:#f3cf82;color:#1a1408}#topnav .grow{flex:1}#navstamp{color:var(--ink-3);font-size:12px}
   #app{display:grid;grid-template-columns:310px 1fr;height:calc(100vh - 44px);overflow:hidden}
   #rail{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden}
   #rail::-webkit-scrollbar{width:8px}#rail::-webkit-scrollbar-thumb{background:#2a3a52;border-radius:4px}
@@ -121,7 +121,7 @@
 </style>
 </head>
 <body>
-<nav id="topnav"><a class="brand" href="./">SanctionScope</a><a href="./" class="on">Map</a><a href="screen.html">Screen a list</a><a href="programs/">Programs</a><a href="countries/">Countries</a><a href="parties/">Parties</a><a href="api/">API</a><a href="about.html">About</a><span class="grow"></span><span id="navstamp"></span></nav>
+<nav id="topnav"><a class="brand" href="./">SanctionScope</a><a href="./" class="on">Map</a><a href="screen.html">Screen a list</a><a href="programs/">Programs</a><a href="countries/">Countries</a><a href="parties/">Parties</a><a href="api/">API</a><a href="about.html">About</a><span class="grow"></span><span id="navstamp"></span><a class="cta" href="api/subscribe">API Pro</a></nav>
 <div id="app">
   <aside id="rail">
     <div class="stamp" id="stamp" style="padding-top:14px">Loading…</div>
@@ -213,6 +213,8 @@
 
     <div class="sec muted">
       Sources: US Consolidated Screening List (OFAC, BIS, State), EU Consolidated Financial Sanctions List, UK OFSI Consolidated List, UN Security Council Consolidated List, Australia DFAT Consolidated List, Canada SEMA list. Parties appearing on several lists are matched by name, which is approximate. Points are placed by city where the listed address names one, otherwise spread inside the country. Lines are great circles. Not legal advice; always confirm against the official list before acting.
+    
+      <div style="margin-top:8px"><a href="about.html">About</a> · <a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> · <a href="api/v1/feed.xml">RSS</a> · <a href="mailto:hello@sanctionscope.com">Contact</a></div>
     </div>
   </aside>
 

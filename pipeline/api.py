@@ -146,57 +146,92 @@ def build_api(site_url):
     })
 
     # docs page
+    import theme
     ex = site_url + "api/v1/"
-    doc = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>API · SanctionScope</title>
-<meta name="description" content="Free JSON API for the merged US, EU, UK, UN, Australian and Canadian sanctions lists, geocoded, with cross-list relationships.">
-<style>:root{{--ocean:#0e1726;--ink:#e6e1d6;--ink-2:#a39d90;--ink-3:#6b6659;--line:#26344a;--sdn:#e9b44c}}*{{box-sizing:border-box}}body{{margin:0;background:var(--ocean);color:var(--ink);font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;font-size:15px;line-height:1.55}}
-a{{color:var(--sdn)}}main{{max-width:820px;margin:0 auto;padding:28px 20px 60px}}header{{border-bottom:1px solid var(--line);padding:14px 20px;font-size:14px;display:flex;gap:18px}}header a{{color:var(--ink-2);text-decoration:none}}header a.brand{{color:var(--ink);font-size:17px}}
-h1{{font-size:28px;font-weight:400;margin:0 0 6px}}h2{{font-size:14px;font-weight:600;letter-spacing:.06em;color:var(--ink-2);margin:28px 0 8px}}code,pre{{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px}}pre{{background:#0b1321;border:1px solid var(--line);border-radius:4px;padding:10px 12px;overflow:auto}}
-table{{border-collapse:collapse;width:100%;font-size:14px}}td,th{{text-align:left;padding:7px 8px;border-top:1px solid var(--line);vertical-align:top}}th{{color:var(--ink-3);font-weight:500}}.sub{{color:var(--ink-2)}}.btn{{display:inline-block;background:var(--sdn);color:#1a1408;padding:6px 12px;border-radius:4px;text-decoration:none;font-weight:500}}</style></head><body>
-<header><a class="brand" href="{site_url}">SanctionScope</a><a href="{site_url}">Map</a><a href="{site_url}screen.html">Screen a list</a><a href="{site_url}programs/">Programs</a><a href="{site_url}countries/">Countries</a><a href="{site_url}parties/">Parties</a><a href="{site_url}api/">API</a><a href="{site_url}about.html">About</a></header>
-<main><h1>API</h1><p class="sub">The merged dataset behind the map: {meta['parties']:,} parties from {sum(1 for v in meta['authorities'].values() if v['ok'])} authorities, geocoded, with cross-list relationships. Rebuilt nightly. Free, no key, CORS enabled. Base URL <code>{ex}</code>.</p>
-<h2>Static endpoints</h2><table><tr><th>Path</th><th>What</th></tr>
+    n_auth = sum(1 for v in meta["authorities"].values() if v["ok"])
+    tabs_js = """<script>document.querySelectorAll('.tabs').forEach(t=>{const pres=[];let n=t.nextElementSibling;while(n&&n.tagName==='PRE'){pres.push(n);n=n.nextElementSibling;}
+      t.querySelectorAll('button').forEach((b,i)=>b.onclick=()=>{t.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');pres.forEach((p,j)=>p.style.display=i===j?'':'none');});pres.forEach((p,j)=>p.style.display=j?'none':'');});</script>"""
+    body = f"""<h1>The sanctions data behind the map, as an API</h1>
+<p class="lede">{meta['parties']:,} parties from {n_auth} authorities, merged across lists, geocoded, with the relationships between them. Rebuilt every night from the official sources. JSON, CORS enabled, no key needed to start.</p>
+<div class="row"><a class="btn warm" href="#quickstart">Get started free</a><a class="btn" href="{site_url}api/subscribe">Subscribe to Pro</a><a class="btn" href="{ex}openapi.json">OpenAPI spec</a></div>
+<div class="stats"><div class="stat"><b>{meta['parties']:,}</b><span>merged parties</span></div><div class="stat"><b>{n_auth}</b><span>authorities</span></div><div class="stat"><b>{meta.get('multi_listed',0):,}</b><span>on more than one list</span></div><div class="stat"><b>{meta['edges']['link']:,}</b><span>relationships</span></div><div class="stat"><b>nightly</b><span>rebuild, last {esc(meta['date'])}</span></div></div>
+
+<h2 id="pricing">Plans</h2>
+<div class="cards">
+<div class="card"><div class="tag">Free</div><h3>Open access</h3><div class="price">$0<small> · no key</small></div>
+<ul><li>Every static file: full dataset, programs, countries, changes, RSS</li><li>Search: 20 results per request</li><li>Screen: 100 names per request</li><li>Standard fuzzy-match depth</li><li>In-browser screener with no limit</li><li>Personal and research use</li></ul>
+<a class="btn" href="#quickstart">Start with the docs</a></div>
+<div class="card pro"><div class="tag">Pro</div><h3>For teams and products</h3><div class="price">$19.99<small> / month, cancel any time</small></div>
+<ul><li>Everything in Free</li><li>Search: 100 results per request</li><li>Screen: 500 names per request</li><li>Deep fuzzy-match candidate search</li><li>Commercial use</li><li>Email support</li></ul>
+<a class="btn warm" href="{site_url}api/subscribe">Subscribe</a> <a class="btn" href="{site_url}api/portal">Manage subscription</a></div>
+</div>
+<p class="meta">Pro keys are issued on the page you land on after checkout, and can be re-shown by reopening that link. Send the key as an <code>x-api-key</code> header or <code>?key=</code> parameter. <code>GET me</code> confirms the tier. Keys deactivate automatically when a subscription ends. Tax is calculated at checkout.</p>
+
+<h2 id="quickstart">Quick start</h2>
+<div class="tabs"><button class="on">curl</button><button>Python</button><button>JavaScript</button></div>
+<pre><code># search across all six lists
+curl "{ex}search?q=sberbank"
+
+# one record
+curl "{ex}party/ofa:31695"
+
+# screen a list of names (Pro key optional; raises the limit to 500)
+curl -X POST "{ex}screen" -H "content-type: application/json" \\
+  -H "x-api-key: YOUR_KEY" \\
+  -d '{{"names":["Sberbank of Russia","John Smith"],"threshold":0.85}}'</code></pre>
+<pre><code>import requests
+BASE = "{ex}"
+hits = requests.get(BASE + "search", params={{"q": "sberbank"}}).json()["results"]
+rec  = requests.get(BASE + "party/" + hits[0]["id"]).json()
+scr  = requests.post(BASE + "screen", json={{"names": ["Sberbank of Russia", "John Smith"]}},
+                     headers={{"x-api-key": "YOUR_KEY"}}).json()
+for r in scr["results"]:
+    print(r["name"], "->", [(m["name"], m["score"]) for m in r["matches"]])</code></pre>
+<pre><code>const BASE = "{ex}";
+const hits = (await (await fetch(BASE + "search?q=sberbank")).json()).results;
+const rec  = await (await fetch(BASE + "party/" + encodeURIComponent(hits[0].id))).json();
+const scr  = await (await fetch(BASE + "screen", {{
+  method: "POST", headers: {{"content-type": "application/json", "x-api-key": "YOUR_KEY"}},
+  body: JSON.stringify({{names: ["Sberbank of Russia", "John Smith"]}})
+}})).json();</code></pre>
+
+<h2>Query endpoints</h2>
+<table><tr><th>Endpoint</th><th>What it does</th></tr>
+<tr><td><code>GET search?q=&lt;text&gt;&amp;limit=20</code></td><td>Name and alias search across all lists. Diacritic-insensitive, token-based, scored 0 to 1.</td></tr>
+<tr><td><code>GET party/&lt;id&gt;</code></td><td>One merged party. Ids look like <code>ofa:12345</code>, <code>eu:EU-123</code>, <code>uk:UK-RUS0001</code>.</td></tr>
+<tr><td><code>POST screen</code></td><td>Body <code>{{"names": [...], "threshold": 0.85}}</code>. Returns up to five scored matches per name. Names are processed in memory and not stored.</td></tr>
+<tr><td><code>GET me</code></td><td>Tier and limits for the supplied key.</td></tr></table>
+
+<h2>Static files</h2>
+<p class="sub">Regenerated nightly. Cache them; they change once a day.</p>
+<table><tr><th>Path</th><th>Contents</th></tr>
 <tr><td><a href="{ex}meta.json">meta.json</a></td><td>Build time, counts, per-authority status, program and country lists</td></tr>
-<tr><td><a href="{ex}parties.json">parties.json</a></td><td>Manifest of parts (8,000 parties each) that together hold every merged party with addresses, aliases, programs, authorities, coordinates and links</td></tr>
-<tr><td><a href="{ex}index.json">index.json</a></td><td>Compact index (id, name, aliases, type, country, authorities, programs) for client-side search</td></tr>
-<tr><td><a href="{ex}changes.json">changes.json</a></td><td>Additions and removals by date since the site began tracking</td></tr>
-<tr><td><a href="{ex}feed.xml">feed.xml</a></td><td>The same as RSS</td></tr>
-<tr><td><a href="{ex}programs.json">programs.json</a>, programs/&lt;slug&gt;.json</td><td>Programs with counts; parties in one program</td></tr>
-<tr><td><a href="{ex}countries.json">countries.json</a>, countries/&lt;iso2&gt;.json</td><td>Countries with counts; parties located in one country</td></tr>
+<tr><td><a href="{ex}parties.json">parties.json</a></td><td>Manifest of parts (8,000 parties each) holding every merged party with addresses, aliases, programs, authorities, coordinates and links</td></tr>
+<tr><td><a href="{ex}index.json">index.json</a></td><td>Compact index for client-side search: id, name, aliases, type, country, authorities, programs</td></tr>
+<tr><td><a href="{ex}changes.json">changes.json</a> · <a href="{ex}feed.xml">feed.xml</a></td><td>Additions and removals by date, as JSON and RSS</td></tr>
+<tr><td><a href="{ex}programs.json">programs.json</a> · programs/&lt;slug&gt;.json</td><td>Programs with counts; parties in one program</td></tr>
+<tr><td><a href="{ex}countries.json">countries.json</a> · countries/&lt;iso2&gt;.json</td><td>Countries with counts; parties located in one country</td></tr>
 <tr><td><a href="{ex}openapi.json">openapi.json</a></td><td>Machine-readable description</td></tr></table>
-<h2>Query endpoints</h2><table><tr><th>Path</th><th>What</th></tr>
-<tr><td><code>GET party/&lt;id&gt;</code></td><td>One party. Ids look like <code>ofa:12345</code>, <code>eu:EU-123</code>, <code>uk:UK-RUS0001</code>.</td></tr>
-<tr><td><code>GET search?q=&lt;text&gt;&amp;limit=20</code></td><td>Name and alias search across all lists, diacritic-insensitive.</td></tr>
-<tr><td><code>GET me</code></td><td>Your tier and limits for the supplied key.</td></tr>
-<tr><td><code>POST screen</code></td><td>Body <code>{{"names": ["..."], "threshold": 0.85}}</code>, up to 100 names per request. Returns scored matches per name. Names are processed in memory and not stored.</td></tr></table>
-<h2>Tiers</h2><table><tr><th></th><th>Free</th><th>Pro</th></tr>
-<tr><td>Static files (full dataset, programs, countries, changes, RSS)</td><td>unlimited</td><td>unlimited</td></tr>
-<tr><td>search results per request</td><td>20</td><td>100</td></tr>
-<tr><td>screen names per request</td><td>100</td><td>500</td></tr>
-<tr><td>Candidate depth for fuzzy matching</td><td>standard</td><td>deep</td></tr>
-<tr><td>Commercial use and support</td><td>at your own risk</td><td>yes, by email</td></tr>
-<tr><td>Price</td><td>free, no key</td><td><a class="btn" href="{site_url}api/subscribe">Subscribe</a></td></tr></table>
-<p class="sub">Pro keys are issued right after checkout and used as an <code>x-api-key</code> header or <code>?key=</code> parameter. Check a key at <code>GET me</code>. The key switches off automatically if the subscription ends. Subscribers can update their card, download invoices or cancel at the <a href="{site_url}api/portal">billing portal</a>.</p>
-<h2>Examples</h2>
-<pre>curl "{ex}search?q=sberbank"
-curl "{ex}party/ofa:12345"
-curl -X POST "{ex}screen" -H "content-type: application/json" -d '{{"names":["Sberbank of Russia","John Smith"]}}'
-curl "{ex}countries/ru.json" | jq '.parties[] | select(.t=="Vessel") | .n'</pre>
-<h2>Record shape</h2><pre>{{
+
+<h2>Record shape</h2>
+<pre><code>{{
   "id": "ofa:31695", "n": "Central Bank of the Russian Federation", "t": "Entity",
   "au": ["US","EU","UK","AU","CA"],          authorities listing this party (merged by name)
-  "p": ["RUSSIA-EO14024","EU:RUS", ...],     programs, non-US prefixed by authority
-  "s": "OFAC other", "list": "Sectoral Sanctions Identifications List (SSI)...",
+  "p": ["RUSSIA-EO14024","EU:RUS", ...],     programs; non-US prefixed by authority
+  "s": "OFAC other", "list": "Sectoral Sanctions Identifications List ...",
   "cc": "RU", "lat": 55.75, "lon": 37.61, "city": "Moscow",
   "inf": null,                                set when the location was inferred, not from an address
-  "a": ["12 Neglinnaya St, Moscow, RU"], "alt": [...], "nat": [...], "dob": "", "ids": "...", "rem": "...",
+  "a": [...addresses], "alt": [...aliases], "nat": [...], "dob": "", "ids": "...", "rem": "...",
   "ly": 2022,                                 earliest published listing year across records
-  "recs": [{{"au":"EU","url":"...","p":[...],"listed":"2022-02-25"}}, ...],  one per authority when merged
+  "recs": [{{"au":"EU","url":"...","p":[...],"listed":"2022-02-25"}}, ...],   one per authority when merged
   "links": ["ofa:16681", ...],                "Linked To" relationships
   "page": "...", "map": "...#p=ofa:31695"
-}}</pre>
-<h2>Terms</h2><p class="sub">Source data are official government publications. The merged form is released CC0. Cross-list matching is by name and approximate; inferred locations are marked. Always confirm against the official record before acting on a match. No uptime guarantee; please cache and be reasonable with request volume.</p>
-</main></body></html>"""
+}}</code></pre>
+
+<div class="callout">Name matching is approximate by design. A match means "look closer", never "this is the same party". Confirm against the official record, linked from every result, before acting. Full terms on the <a href="{site_url}terms.html">terms page</a>.</div>
+<h2>Terms</h2><p class="sub">Source data are official government publications; the merged form is released CC0. No uptime guarantee on the free tier; please cache and keep request volume reasonable. Support for Pro subscribers at <a href="mailto:hello@sanctionscope.com">hello@sanctionscope.com</a>.</p>
+{tabs_js}"""
+    doc = theme.shell("API", f"Free JSON API for the merged US, EU, UK, UN, Australian and Canadian sanctions lists: {meta['parties']:,} geocoded parties with cross-list relationships. Pro tier for higher limits.", body, site_url, site_url + "api/", on="API", built=meta["date"], narrow=False)
     os.makedirs(os.path.join(SITE, "api"), exist_ok=True)
     with open(os.path.join(SITE, "api", "index.html"), "w", encoding="utf-8") as f: f.write(doc)
     return len(parties), len(shards)
