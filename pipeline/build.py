@@ -641,6 +641,27 @@ def main():
             json.dump(compact[i:i + CHUNK], f, separators=(",", ":"), ensure_ascii=False)
     with open(os.path.join(OUT, "parties.json"), "w", encoding="utf-8") as f:
         json.dump({"parts": parts, "count": len(compact), "edges": edges}, f, separators=(",", ":"), ensure_ascii=False)
+    # compact map parts: only what the map needs to draw, filter and search; full records come from the API shards on click
+    prog_idx = {g: i for i, (g, _) in enumerate(sorted(programs.items(), key=lambda x: -x[1]))}
+    for old in os.listdir(OUT):
+        if old.startswith("map-") and old.endswith(".json"): os.remove(os.path.join(OUT, old))
+    mparts = []
+    for i in range(0, len(compact), 10000):
+        name = f"map-{i // 10000 + 1}.json"; mparts.append(name)
+        chunk = []
+        for p in compact[i:i + 10000]:
+            m = {"id": p["id"], "n": p["n"], "t": p["t"][0], "s": p["s"], "au": "".join(a[0] + a[1] for a in p["au"]) if False else p["au"], "cc": p.get("cc"),
+                 "p": [prog_idx[g] for g in p.get("p", []) if g in prog_idx]}
+            if p.get("lat") is not None: m["lat"] = round(p["lat"], 4); m["lon"] = round(p["lon"], 4)
+            if p.get("city"): m["city"] = p["city"]
+            if p.get("inf"): m["inf"] = 1
+            if p.get("ly"): m["ly"] = p["ly"]
+            if p.get("alt"): m["alt"] = [a for a in p["alt"][:5] if len(a) < 60]
+            chunk.append(m)
+        with open(os.path.join(OUT, name), "w", encoding="utf-8") as f:
+            json.dump(chunk, f, separators=(",", ":"), ensure_ascii=False)
+    with open(os.path.join(OUT, "map.json"), "w", encoding="utf-8") as f:
+        json.dump({"parts": mparts, "count": len(compact), "programs": [g for g, _ in sorted(programs.items(), key=lambda x: -x[1])], "edges": edges}, f, separators=(",", ":"), ensure_ascii=False)
     with open(os.path.join(OUT, "changes.json"), "w") as f:
         json.dump({"events": changes["events"], "series": changes["series"]}, f, separators=(",", ":"), ensure_ascii=False)
     with open(os.path.join(OUT, "meta.json"), "w") as f:
