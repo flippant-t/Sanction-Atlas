@@ -82,7 +82,7 @@
   #legend{position:absolute;left:14px;bottom:26px;font-size:12px;color:var(--ink-2);display:flex;gap:14px;flex-wrap:wrap;pointer-events:none;background:rgba(14,23,38,.6);padding:6px 10px;border-radius:6px;max-width:70%}
   #legend span{display:inline-flex;align-items:center;gap:6px}#legend i{width:9px;height:9px;border-radius:50%;display:inline-block}
   #modebar{position:absolute;top:14px;left:50%;transform:translateX(-50%);display:flex;background:rgba(14,23,38,.85);border:1px solid var(--line);border-radius:8px;padding:3px;z-index:3;backdrop-filter:blur(6px)}
-  #modebar button{background:none;border:0;color:var(--ink-2);padding:6px 12px;border-radius:6px;cursor:pointer;font:inherit;font-size:13px}#modebar button.on{background:#182538;color:var(--ink)}
+  #modebar button{background:none;border:0;color:var(--ink-2);padding:6px 12px;border-radius:6px;cursor:pointer;font:inherit;font-size:13px}#modebar button.on{background:#182538;color:var(--ink)}#modebar .sep{width:1px;background:var(--line);margin:4px 4px}
   #hint{position:absolute;left:50%;top:60px;transform:translateX(-50%);background:rgba(11,18,32,.88);border:1px solid var(--line);padding:6px 8px 6px 12px;border-radius:6px;font-size:12px;color:var(--ink-2);display:flex;gap:10px;align-items:center;z-index:3;max-width:calc(100% - 120px)}
   #hint button{background:none;border:0;color:var(--ink-2);font-size:16px;cursor:pointer;padding:0 2px}
   #loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--ink-2);background:var(--bg);z-index:9}
@@ -184,8 +184,8 @@
   <main id="stage">
     <div id="loading">Loading…</div>
     <div id="map"></div>
-    <div id="modebar"><button data-m="parties" class="on">Parties</button><button data-m="score">Intensity</button><button data-m="changes">Activity</button><button data-m="compare">Authorities</button></div>
-    <div id="hint"><span>Scroll to zoom. Click a cluster to open it, a dot for its record, a country for its overview.</span><button id="hintx" aria-label="Dismiss">×</button></div>
+    <div id="modebar"><button data-m="parties" class="on">Parties</button><button data-m="score">Intensity</button><button data-m="changes">Activity</button><button data-m="compare">Authorities</button><span class="sep"></span><button id="globeBtn" title="Switch between globe and flat map">Globe</button></div>
+    <div id="hint"><span>Drag to spin, scroll to zoom. Click a cluster to open it, a dot for its record, a country for its overview.</span><button id="hintx" aria-label="Dismiss">×</button></div>
     <button class="btn" id="railToggle">Search and filters</button>
     <div id="legend"></div>
     <div id="toast"></div>
@@ -311,10 +311,10 @@ function pushDataNow(){
   map.setPaintProperty('countries-line','line-opacity',choroOnly?0.6:0.25);
 }
 function addLayers(){
-  const firstSymbol=(map.getStyle().layers.find(l=>l.type==='symbol')||{}).id;
+  const firstSymbol=undefined;
   map.addSource('countries',{type:'geojson',data:COUNTRIES});
   map.addLayer({id:'countries-fill',type:'fill',source:'countries',paint:{'fill-color':'rgba(0,0,0,0)','fill-opacity':1}},firstSymbol);
-  map.addLayer({id:'countries-line',type:'line',source:'countries',paint:{'line-color':'#3a4d69','line-width':0.6,'line-opacity':0.35}},firstSymbol);
+  map.addLayer({id:'countries-line',type:'line',source:'countries',paint:{'line-color':'#e9b44c','line-width':0.5,'line-opacity':0.12}},firstSymbol);
   map.addSource('lines',{type:'geojson',data:{type:'FeatureCollection',features:[]},maxzoom:10,buffer:0,tolerance:1.5});
   map.addLayer({id:'lines',type:'line',source:'lines',layout:{'line-cap':'round'},filter:['==',['get','k'],'link'],paint:{
     'line-color':['match',['get','k'],'link','#f0d9a6','foot','#5fb8c4','#b18fd9'],
@@ -329,7 +329,7 @@ function addLayers(){
     'circle-color':['case',['>',['get','green'],['/',['get','point_count'],2]],CMP_BOTH,['>',['get','teal'],['/',['get','point_count'],2]],CMP_A,'#e9b44c'],
     'circle-opacity':0.82,'circle-stroke-color':'#0b1321','circle-stroke-width':1,
     'circle-radius':['interpolate',['linear'],['sqrt',['get','point_count']],1,7,10,14,50,24,150,34]}});
-  map.addLayer({id:'cluster-count',type:'symbol',source:'pts',filter:['has','point_count'],layout:{'text-field':['get','point_count_abbreviated'],'text-size':11,'text-font':['Open Sans Semibold','Arial Unicode MS Bold'],'text-allow-overlap':true},paint:{'text-color':'#14110a'}});
+  map.addLayer({id:'cluster-count',type:'symbol',source:'pts',filter:['has','point_count'],layout:{'text-field':['get','point_count_abbreviated'],'text-size':11,'text-font':['Open Sans Semibold'],'text-allow-overlap':true},paint:{'text-color':'#14110a'}});
   map.addLayer({id:'points',type:'circle',source:'pts',filter:['!',['has','point_count']],paint:{
     'circle-color':['get','col'],'circle-radius':['interpolate',['linear'],['zoom'],3,2.5,8,4.5,14,7],
     'circle-opacity':['case',['==',['get','inf'],1],0,['==',['get','sel'],1],1,0.9],
@@ -354,23 +354,19 @@ function addLayers(){
   map.on('mousemove',e=>{if(MODE!=='score')return;const c=map.queryRenderedFeatures(e.point,{layers:['countries-fill']});const iso=c.length&&c[0].properties.iso;const s=iso&&COUNTRY_STATS.get(iso);map.getCanvas().style.cursor=s?'pointer':'';if(s){popup.setLngLat(e.lngLat).setHTML(`<b>${esc(nameByISO[iso])}</b><br><span style="color:#a8a294">intensity ${s.score} · ${s.n.toLocaleString()} parties · ${s.progs.size} programs · click for details</span>`).addTo(map);}else popup.remove();});
 }
 async function loadStyle(){
-  try{const r=await fetch(BASEMAP_LABELS,{signal:AbortSignal.timeout(6000)});if(!r.ok)throw 0;const st=await r.json();
-    // land a shade lighter than water so coastlines read; keep CARTO's own borders and labels
-    for(const l of st.layers){
-      if(l.type==='background')l.paint={...(l.paint||{}),'background-color':'#18243a'};
-      if(l.id&&/water/.test(l.id)&&l.type==='fill')l.paint={...(l.paint||{}),'fill-color':'#0b1321'};
-    }
-    return st;}
-  catch{return {version:8,glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',sources:{},layers:[{id:'bg',type:'background',paint:{'background-color':'#0b1321'}}],metadata:{fallback:true}};}
+  // Raster basemap: CARTO dark matter as pre-rendered image tiles. No vector decoding in workers, so it cannot stall
+  // behind our own data and renders identically in every browser. Labels come with the tiles.
+  const sub=['a','b','c','d'];
+  return {version:8,projection:{type:'globe'},glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+    sources:{carto:{type:'raster',tiles:sub.map(x=>`https://${x}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png`),tileSize:256,maxzoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, © <a href="https://carto.com/attributions">CARTO</a>'}},
+    layers:[{id:'bg',type:'background',paint:{'background-color':'#0b1321'}},{id:'carto',type:'raster',source:'carto',paint:{'raster-opacity':0.92,'raster-brightness-max':0.85,'raster-saturation':-0.2}}]};
 }
 
 // ============================================================ live AIS
 function agoText(ts){if(!ts)return 'no position';const h=(Date.now()-Date.parse(ts.replace(' ','T')+'Z'))/36e5;return h<1?`${Math.round(h*60)} min ago`:h<48?`${Math.round(h)} h ago`:`${Math.round(h/24)} days ago`;}
-async function loadAIS(){
-  if(AIS)return AIS;try{AIS=await (await fetch('api/v1/vessels')).json();}catch{AIS={positions:{},meta:{}};}return AIS;
-}
+async function loadAIS(){if(AIS)return AIS;try{AIS=await (await fetch('api/v1/vessels')).json();}catch{AIS={positions:{},meta:{}};}return AIS;}
 async function pushAIS(){
-  const on=document.getElementById('aisOn').checked;const note=document.getElementById('aisNote');
+  if(!styleReady)return;const on=document.getElementById('aisOn').checked;const note=document.getElementById('aisNote');
   if(!on){map.getSource('ais').setData({type:'FeatureCollection',features:[]});map.getSource('ais-trail').setData({type:'FeatureCollection',features:[]});return;}
   const d=await loadAIS();const pts=[],trails=[];let recent=0;
   for(const [mmsi,p] of Object.entries(d.positions||{})){if(p.lat==null)continue;const party=BYID.get(p.id);const age=(Date.now()-Date.parse((p.ts||'').replace(' ','T')+'Z'))/36e5;if(age<24)recent++;
@@ -446,6 +442,8 @@ document.getElementById('inclInf').addEventListener('change',e=>{INCL_INF=e.targ
 let yrTimer=null;
 document.getElementById('yrPlay').onclick=()=>{const b=document.getElementById('yrPlay');if(yrTimer){clearInterval(yrTimer);yrTimer=null;b.textContent='▶';return;}if(+yrEl.value>=+yrEl.max)yrEl.value=yrEl.min;b.textContent='❚❚';yrTimer=setInterval(()=>{if(+yrEl.value>=+yrEl.max){clearInterval(yrTimer);yrTimer=null;b.textContent='▶';return;}yrEl.value=+yrEl.value+1;yrEl.dispatchEvent(new Event('input'));},700);};
 document.getElementById('hintx').onclick=()=>document.getElementById('hint').remove();
+let GLOBE=true;
+document.getElementById('globeBtn').onclick=()=>{GLOBE=!GLOBE;map.setProjection({type:GLOBE?'globe':'mercator'});document.getElementById('globeBtn').textContent=GLOBE?'Globe':'Flat';document.getElementById('globeBtn').classList.toggle('on',GLOBE);};
 document.getElementById('railToggle').onclick=()=>{const r=document.getElementById('rail');r.classList.toggle('open');document.getElementById('railToggle').textContent=r.classList.contains('open')?'Close':'Search and filters';};
 document.getElementById('railCollapse').onclick=()=>{document.getElementById('app').classList.toggle('collapsed');setTimeout(()=>map.resize(),60);};
 document.getElementById('hits').addEventListener('click',()=>{if(innerWidth<=760){document.getElementById('rail').classList.remove('open');document.getElementById('railToggle').textContent='Search and filters';}});
@@ -623,7 +621,7 @@ function applyState(st){
   renderFilters();if(st.cmp){compare=st.cmp;setMode('compare');}else setMode('parties');urlLock=false;writeURL();
   selected=null;closeDrawer();
   if(st.find){const p=PARTIES.find(q=>q.n===st.find&&q.x!=null)||PARTIES.find(q=>q.n.toUpperCase().includes(st.find)&&q.x!=null);if(p)select(p,!st.c);}
-  if(st.c){const base=centroidByISO.get(st.c);if(base)flyTo(base,st.k||3);}else if(st.reset&&!st.find)map.flyTo({center:[15,20],zoom:1.4,duration:900});
+  if(st.c){const base=centroidByISO.get(st.c);if(base)flyTo(base,st.k||3);}else if(st.reset&&!st.find)map.flyTo({center:[25,25],zoom:1.6,duration:900});
 }
 function startStory(i){story=STORIES[i];stepI=0;showStep();if(innerWidth<=760){document.getElementById('rail').classList.remove('open');document.getElementById('railToggle').textContent='Search and filters';}}
 function showStep(){const s=story.steps[stepI],el=document.getElementById('story');el.style.display='block';el.querySelector('h5').textContent=s.t;el.querySelector('p').textContent=s.x;el.querySelector('.step').textContent=`${story.title} · ${stepI+1} of ${story.steps.length}`;document.getElementById('stPrev').disabled=stepI===0;document.getElementById('stNext').textContent=stepI===story.steps.length-1?'Finish':'Next';applyState(s.st);}
@@ -655,10 +653,12 @@ async function boot(){
   document.getElementById('stamp').innerHTML=`<b>${META.parties.toLocaleString()}</b> parties from ${okA.length} authorities (${okA.join(', ')})${META.multi_listed?`, ${META.multi_listed.toLocaleString()} on more than one list`:''}.${failA.length?` <span class="minus">${failA.join(', ')} failed to load this build.</span>`:''} ${META.with_city.toLocaleString()} placed to a city. Updated ${new Date(META.built).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}.`+(CHANGES.series&&CHANGES.series.length>1?` Last build: <span class="plus">+${META.added_today}</span> <span class="minus">−${META.removed_today}</span>.`:'');
   document.getElementById('navstamp').textContent=`${META.parties.toLocaleString()} parties · updated ${new Date(META.built).toLocaleDateString(undefined,{month:'short',day:'numeric'})}`;
   renderStories();renderFeed();
-  map=new maplibregl.Map({container:'map',style,center:[15,20],zoom:1.4,minZoom:1,maxZoom:16,attributionControl:{compact:true}});
+  map=new maplibregl.Map({container:'map',style,center:[25,25],zoom:1.6,minZoom:0.8,maxZoom:16,attributionControl:{compact:true}});
+  document.getElementById('globeBtn').classList.add('on');
   map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-left');
   popup=new maplibregl.Popup({closeButton:false,closeOnClick:false,offset:8});
-  map.on('load',()=>{if(style.metadata&&style.metadata.fallback){map.addSource('land',{type:'geojson',data:COUNTRIES});map.addLayer({id:'land',type:'fill',source:'land',paint:{'fill-color':'#1b2738'}});}addLayers();loadingEl.style.display='none';readURL();});
+  let setupDone=false;const onLoad=()=>{if(setupDone)return;setupDone=true;try{addLayers();readURL();}catch(e){console.error('setup failed',e);toast('Map setup failed: '+e.message);}loadingEl.style.display='none';};
+  map.once('load',onLoad);const poll=setInterval(()=>{if(setupDone){clearInterval(poll);return;}if(map.isStyleLoaded()){map.triggerRepaint();if(map.loaded())onLoad();}},500);
   map.on('error',e=>{console.warn('map error',e&&e.error&&e.error.message);});
   window.__ss={get AIS(){return AIS},get map(){return map},get VISIBLE(){return VISIBLE},get PARTIES(){return PARTIES},get filters(){return filters},get MODE(){return MODE},get compare(){return compare},select,openCountry,setMode,update,centroidByISO};
 }
