@@ -79,3 +79,18 @@ export function candidates(cache, q, cap = 400) {
 export function json(obj, status = 200, extra = {}) {
   return new Response(JSON.stringify(obj), { status, headers: { "content-type": "application/json; charset=utf-8", "access-control-allow-origin": "*", "cache-control": "public, max-age=3600", ...extra } });
 }
+
+// ---- API keys (Pro tier). Keys live in the KEYS KV namespace: key:<key> -> {tier, email, customer, created, active}
+export function keyFrom(request) {
+  const h = request.headers.get("x-api-key") || request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  if (h) return h.trim();
+  return new URL(request.url).searchParams.get("key") || "";
+}
+export async function tierOf(request, env) {
+  const key = keyFrom(request);
+  if (!key || !env.KEYS) return { tier: "free", key: null };
+  const rec = await env.KEYS.get("key:" + key, { type: "json" });
+  if (!rec || rec.active === false) return { tier: "free", key: null, invalid: !!key };
+  return { tier: rec.tier || "pro", key, email: rec.email };
+}
+export const LIMITS = { free: { screen: 100, candidates: 60, search: 20 }, pro: { screen: 500, candidates: 200, search: 100 } };

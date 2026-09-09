@@ -20,7 +20,8 @@
   html,body{height:100%;margin:0;background:var(--ocean);color:var(--ink);font-family:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;font-size:14px;line-height:1.45}
   button,input,select,label{font:inherit}
   a{color:var(--sdn)}
-  #app{display:grid;grid-template-columns:310px 1fr;height:100vh;overflow:hidden}
+  #topnav{height:44px;display:flex;align-items:center;gap:18px;padding:0 18px;border-bottom:1px solid var(--line);background:var(--panel);font-size:14px}#topnav a{color:var(--ink-2);text-decoration:none}#topnav a:hover,#topnav a.on{color:var(--ink)}#topnav .brand{color:var(--ink);font-size:17px;margin-right:6px}#topnav .grow{flex:1}#navstamp{color:var(--ink-3);font-size:12px}
+  #app{display:grid;grid-template-columns:310px 1fr;height:calc(100vh - 44px);overflow:hidden}
   #rail{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden}
   #rail::-webkit-scrollbar{width:8px}#rail::-webkit-scrollbar-thumb{background:#2a3a52;border-radius:4px}
   h1{font-size:22px;font-weight:400;margin:0;padding:18px 18px 4px;line-height:1.1}
@@ -109,7 +110,9 @@
     #rail{position:absolute;left:0;right:0;bottom:0;top:auto;max-height:70vh;border-right:0;border-top:1px solid var(--line);transform:translateY(100%);transition:transform .2s;z-index:8}
     #rail.open{transform:none}
     #railToggle{display:block}
-    #mhead{display:block}
+    #mhead{display:none}
+    #topnav{height:auto;flex-wrap:wrap;gap:10px 14px;padding:8px 12px}#navstamp{display:none}#topnav .brand{width:100%}
+    #app{height:auto;min-height:calc(100vh - 80px)}#stage{height:calc(100vh - 80px)}
     #zoomctl{top:auto;bottom:100px}
     #drawer{width:100%}
     #legend{display:none}
@@ -118,10 +121,10 @@
 </style>
 </head>
 <body>
+<nav id="topnav"><a class="brand" href="./">SanctionScope</a><a href="./" class="on">Map</a><a href="screen.html">Screen a list</a><a href="programs/">Programs</a><a href="countries/">Countries</a><a href="parties/">Parties</a><a href="api/">API</a><a href="about.html">About</a><span class="grow"></span><span id="navstamp"></span></nav>
 <div id="app">
   <aside id="rail">
-    <h1>SanctionScope<small>Sanctions and export-control lists from the US, EU, UK, UN, Australia and Canada, on one map, updated nightly</small></h1>
-    <div class="stamp" id="stamp">Loading…</div>
+    <div class="stamp" id="stamp" style="padding-top:14px">Loading…</div>
 
 
     <div class="sec">
@@ -207,11 +210,6 @@
     </div>
 
     </details>
-
-    <div class="sec">
-      <h2>Browse</h2>
-      <div class="row" style="flex-wrap:wrap"><a href="screen.html">Screen a list</a> · <a href="api/">API</a> · <a href="programs/">Programs</a> · <a href="countries/">Countries</a> · <a href="parties/">Most connected</a></div>
-    </div>
 
     <div class="sec muted">
       Sources: US Consolidated Screening List (OFAC, BIS, State), EU Consolidated Financial Sanctions List, UK OFSI Consolidated List, UN Security Council Consolidated List, Australia DFAT Consolidated List, Canada SEMA list. Parties appearing on several lists are matched by name, which is approximate. Points are placed by city where the listed address names one, otherwise spread inside the country. Lines are great circles. Not legal advice; always confirm against the official list before acting.
@@ -762,6 +760,7 @@ async function boot(){
   const st=document.getElementById('stamp');
   const okA=Object.entries(META.authorities||{}).filter(([a,v])=>v.ok).map(([a])=>a);const failA=Object.entries(META.authorities||{}).filter(([a,v])=>!v.ok).map(([a])=>AUTH_NAME[a]);
   st.innerHTML=`<b>${META.parties.toLocaleString()}</b> parties from ${okA.length} authorities (${okA.join(', ')})${META.multi_listed?`, ${META.multi_listed.toLocaleString()} on more than one list`:''}.${failA.length?` <span class="minus">${failA.join(', ')} failed to load this build.</span>`:''} ${META.with_city.toLocaleString()} placed to a city. Updated ${new Date(META.built).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}.`+(CHANGES.series&&CHANGES.series.length>1?` Last build: <span class="plus">+${META.added_today}</span> <span class="minus">−${META.removed_today}</span>. ${(CHANGES.events||[]).filter(e=>e.d>=new Date(Date.now()-7*864e5).toISOString().slice(0,10)).length} changes in 7 days, ${(CHANGES.events||[]).filter(e=>e.d>=new Date(Date.now()-30*864e5).toISOString().slice(0,10)).length} in 30.`:'');
+  document.getElementById('navstamp').textContent=`${META.parties.toLocaleString()} parties · updated ${new Date(META.built).toLocaleDateString(undefined,{month:'short',day:'numeric'})}`;
   document.getElementById('mstamp').textContent=META.parties.toLocaleString()+' parties, '+new Date(META.built).toLocaleDateString(undefined,{month:'short',day:'numeric'});
   {const ys=PARTIES.map(p=>p.ly).filter(Boolean);const lo=ys.length?Math.max(1960,d3.min(ys)):1990,hi=Math.max(new Date().getFullYear(),ys.length?d3.max(ys):0);yrEl.min=lo;yrEl.max=hi;yrEl.value=hi;YEAR=hi;document.getElementById('yrLabel').textContent=hi;
    document.getElementById('yrNote').textContent=`Listing dates are published for ${(META.dated||ys.length).toLocaleString()} of ${META.parties.toLocaleString()} parties (mostly the EU, UK, UN, Australian and Canadian lists; OFAC does not publish them in this feed). Undated parties are shown regardless of year when the box is ticked.`;}

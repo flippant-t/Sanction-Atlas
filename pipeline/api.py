@@ -28,6 +28,8 @@ SITE = os.path.join(ROOT, "site")
 DATA = os.path.join(SITE, "data")
 API = os.path.join(SITE, "api", "v1")
 
+def esc(s): return html.escape(str(s or ""))
+
 def slug(s):
     import re
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")[:80] or "x"
@@ -49,6 +51,7 @@ def shard_of(pid):
     return hashlib.sha1(pid.encode()).hexdigest()[:2]
 
 def build_api(site_url):
+    pay_link = os.environ.get("STRIPE_PAYMENT_LINK", "")
     site_url = (site_url or "").rstrip("/") + "/" if site_url else "/"
     meta = load("meta.json"); data = load("parties.json"); changes = load("changes.json")
     parties, edges = data["parties"], data["edges"]
@@ -130,7 +133,8 @@ def build_api(site_url):
             "/countries/{iso2}.json": {"get": {"summary": "Parties located in one country"}},
             "/party/{id}": {"get": {"summary": "One party by id (dynamic)"}},
             "/search": {"get": {"summary": "Name or alias search (dynamic)", "parameters": [{"name": "q", "in": "query", "required": True}, {"name": "limit", "in": "query"}]}},
-            "/screen": {"post": {"summary": "Fuzzy screening of up to 100 names per request (dynamic)", "requestBody": {"content": {"application/json": {"schema": {"type": "object", "properties": {"names": {"type": "array", "items": {"type": "string"}}, "threshold": {"type": "number"}}}}}}}},
+            "/me": {"get": {"summary": "Tier and limits for the supplied API key"}},
+            "/screen": {"post": {"summary": "Fuzzy screening (100 names per request free, 500 with a Pro key); the in-browser screener has no limit", "requestBody": {"content": {"application/json": {"schema": {"type": "object", "properties": {"names": {"type": "array", "items": {"type": "string"}}, "threshold": {"type": "number"}}}}}}}},
         },
     })
 
@@ -141,8 +145,8 @@ def build_api(site_url):
 <style>:root{{--ocean:#0e1726;--ink:#e6e1d6;--ink-2:#a39d90;--ink-3:#6b6659;--line:#26344a;--sdn:#e9b44c}}*{{box-sizing:border-box}}body{{margin:0;background:var(--ocean);color:var(--ink);font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;font-size:15px;line-height:1.55}}
 a{{color:var(--sdn)}}main{{max-width:820px;margin:0 auto;padding:28px 20px 60px}}header{{border-bottom:1px solid var(--line);padding:14px 20px;font-size:14px;display:flex;gap:18px}}header a{{color:var(--ink-2);text-decoration:none}}header a.brand{{color:var(--ink);font-size:17px}}
 h1{{font-size:28px;font-weight:400;margin:0 0 6px}}h2{{font-size:14px;font-weight:600;letter-spacing:.06em;color:var(--ink-2);margin:28px 0 8px}}code,pre{{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px}}pre{{background:#0b1321;border:1px solid var(--line);border-radius:4px;padding:10px 12px;overflow:auto}}
-table{{border-collapse:collapse;width:100%;font-size:14px}}td,th{{text-align:left;padding:7px 8px;border-top:1px solid var(--line);vertical-align:top}}th{{color:var(--ink-3);font-weight:500}}.sub{{color:var(--ink-2)}}</style></head><body>
-<header><a class="brand" href="{site_url}">SanctionScope</a><a href="{site_url}programs/">Programs</a><a href="{site_url}countries/">Countries</a><a href="{site_url}parties/">Parties</a><a href="{site_url}api/">API</a></header>
+table{{border-collapse:collapse;width:100%;font-size:14px}}td,th{{text-align:left;padding:7px 8px;border-top:1px solid var(--line);vertical-align:top}}th{{color:var(--ink-3);font-weight:500}}.sub{{color:var(--ink-2)}}.btn{{display:inline-block;background:var(--sdn);color:#1a1408;padding:6px 12px;border-radius:4px;text-decoration:none;font-weight:500}}</style></head><body>
+<header><a class="brand" href="{site_url}">SanctionScope</a><a href="{site_url}">Map</a><a href="{site_url}screen.html">Screen a list</a><a href="{site_url}programs/">Programs</a><a href="{site_url}countries/">Countries</a><a href="{site_url}parties/">Parties</a><a href="{site_url}api/">API</a><a href="{site_url}about.html">About</a></header>
 <main><h1>API</h1><p class="sub">The merged dataset behind the map: {meta['parties']:,} parties from {sum(1 for v in meta['authorities'].values() if v['ok'])} authorities, geocoded, with cross-list relationships. Rebuilt nightly. Free, no key, CORS enabled. Base URL <code>{ex}</code>.</p>
 <h2>Static endpoints</h2><table><tr><th>Path</th><th>What</th></tr>
 <tr><td><a href="{ex}meta.json">meta.json</a></td><td>Build time, counts, per-authority status, program and country lists</td></tr>
@@ -156,7 +160,16 @@ table{{border-collapse:collapse;width:100%;font-size:14px}}td,th{{text-align:lef
 <h2>Query endpoints</h2><table><tr><th>Path</th><th>What</th></tr>
 <tr><td><code>GET party/&lt;id&gt;</code></td><td>One party. Ids look like <code>ofa:12345</code>, <code>eu:EU-123</code>, <code>uk:UK-RUS0001</code>.</td></tr>
 <tr><td><code>GET search?q=&lt;text&gt;&amp;limit=20</code></td><td>Name and alias search across all lists, diacritic-insensitive.</td></tr>
+<tr><td><code>GET me</code></td><td>Your tier and limits for the supplied key.</td></tr>
 <tr><td><code>POST screen</code></td><td>Body <code>{{"names": ["..."], "threshold": 0.85}}</code>, up to 100 names per request. Returns scored matches per name. Names are processed in memory and not stored.</td></tr></table>
+<h2>Tiers</h2><table><tr><th></th><th>Free</th><th>Pro</th></tr>
+<tr><td>Static files (full dataset, programs, countries, changes, RSS)</td><td>unlimited</td><td>unlimited</td></tr>
+<tr><td>search results per request</td><td>20</td><td>100</td></tr>
+<tr><td>screen names per request</td><td>100</td><td>500</td></tr>
+<tr><td>Candidate depth for fuzzy matching</td><td>standard</td><td>deep</td></tr>
+<tr><td>Commercial use and support</td><td>at your own risk</td><td>yes, by email</td></tr>
+<tr><td>Price</td><td>free, no key</td><td>{('<a class="btn" href="' + esc(pay_link) + '">Subscribe</a>') if pay_link else 'coming soon'}</td></tr></table>
+<p class="sub">Pro keys are issued right after checkout and used as an <code>x-api-key</code> header or <code>?key=</code> parameter. Check a key at <code>GET me</code>. The key switches off automatically if the subscription ends.</p>
 <h2>Examples</h2>
 <pre>curl "{ex}search?q=sberbank"
 curl "{ex}party/ofa:12345"

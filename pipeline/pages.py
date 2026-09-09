@@ -102,7 +102,7 @@ def page(title, desc, body, rel, canonical, extra_head=""):
 <meta property="og:title" content="{esc(title)}"><meta property="og:description" content="{esc(desc)}"><meta property="og:image" content="{esc(rel)}og.png">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%230e1726'/><circle cx='16' cy='16' r='5' fill='%23e9b44c'/></svg>">
 <style>{CSS}</style>{extra_head}</head><body>
-<header><a class="brand" href="{rel}">SanctionScope</a><a href="{rel}programs/">Programs</a><a href="{rel}countries/">Countries</a><a href="{rel}parties/">Parties</a><a href="{rel}screen.html">Screen</a><a href="{rel}api/">API</a></header>
+<header><a class="brand" href="{rel}">SanctionScope</a><a href="{rel}">Map</a><a href="{rel}screen.html">Screen a list</a><a href="{rel}programs/">Programs</a><a href="{rel}countries/">Countries</a><a href="{rel}parties/">Parties</a><a href="{rel}api/">API</a><a href="{rel}about.html">About</a></header>
 <main>{body}</main>
 <footer>Data: US Consolidated Screening List (OFAC, BIS, State), EU, UK OFSI, UN Security Council, Australia DFAT and Canada SEMA consolidated lists. Cross-list matching is by name and approximate. Rebuilt nightly. Not legal advice; confirm against the official record before acting.</footer>
 </body></html>"""
@@ -227,6 +227,31 @@ def build_pages(site_url):
 <ul class="plain">{''.join(f'<li><a href="{p["pg"]}.html">{esc(p["n"])}</a> <span class="meta">{esc(p["t"])}, {esc(p.get("city") or iso_name.get(p.get("cc"),""))}, {deg[p["id"]]} links</span></li>' for p in paged)}</ul>"""
     write(os.path.join(SITE, "parties", "index.html"), page("Most connected sanctioned parties", "Sanctioned entities and individuals ranked by how many other listed parties they are linked to.", body, "../", f"{site_url}parties/"))
     urls.append("parties/")
+
+    # ---------------- about / trust page
+    AUTH_LONG = {"US": "US Consolidated Screening List (OFAC SDN and non-SDN, BIS Entity List, Denied Persons, Unverified and MEU lists, State Department ISN and AECA)",
+                 "EU": "EU Consolidated Financial Sanctions List", "UK": "UK Sanctions List (FCDO)", "UN": "UN Security Council Consolidated List",
+                 "AU": "Australia DFAT Consolidated List", "CA": "Canada SEMA and autonomous sanctions list"}
+    auth = meta.get("authorities", {})
+    inf = Counter(p.get("inf") for p in parties if p.get("inf"))
+    n_multi = meta.get("multi_listed", 0)
+    body = f"""<h1>About SanctionScope</h1><p class="sub">What this is, where the data comes from, and what we do to it. Built as an independent project; not affiliated with any government.</p>
+<h2>Sources, as of this build ({today})</h2>
+<table><tr><th>Authority</th><th>List</th><th class="n">Records</th><th>Status</th></tr>{''.join(f'<tr><td>{esc(AUTH_NAME.get(a,a))}</td><td>{esc(AUTH_LONG.get(a,""))}</td><td class="n">{v.get("n",0):,}</td><td>{"loaded" if v.get("ok") else "failed: " + esc(v.get("error","")[:80])}</td></tr>' for a, v in auth.items())}</table>
+<p class="meta">Every list is downloaded fresh from the publishing authority each night. If a download or parse fails, that authority is skipped for the night and shown here and on the map as failed; nothing stale is silently kept beyond the previous night's copy.</p>
+<h2>What we do to the data</h2>
+<p><b>Merging.</b> {meta['parties']:,} parties on this site come from {sum(v.get('n',0) for v in auth.values()):,} source records. Records from different authorities are merged when their normalised names match: legal suffixes are stripped, word order is ignored for people, and two people are never merged if their published birth years conflict. {n_multi:,} parties currently appear on more than one list. Matching is by name and is approximate; every merged party shows its separate official records so you can check.</p>
+<p><b>Placement.</b> {meta['with_city']:,} parties are placed at a city named in a listed address, using the GeoNames gazetteer. Parties with a country but no recognised city are spread within the country. {sum(inf.values()):,} parties that publish no address at all are placed by inference: {inf.get('program',0):,} from the country of their sanctions program, {inf.get('group',0):,} from a curated table of where armed groups and criminal organisations operate, {inf.get('remarks',0):,} from a country named in their record. Inferred placements are drawn hollow, labelled in the record, and can be switched off.</p>
+<p><b>Links.</b> "Linked To" relationships are taken verbatim from OFAC remarks. No relationships are inferred.</p>
+<p><b>Categories and the intensity index.</b> The "why listed" groups and the 0 to 10 country intensity index are this site's own visualisation aids, computed from party counts, program counts and recent activity. They are not official classifications or legal assessments.</p>
+<p><b>Change tracking.</b> Additions and removals are detected by comparing each night's build with the previous one, starting from the day the site went live. Designation dates published by the EU, UK, UN, Australian and Canadian lists are shown where available; OFAC does not publish them in the feed we use.</p>
+<h2>What this is not</h2>
+<p>Not legal advice, not a compliance tool of record, and not a substitute for the official lists. A name match here means "look closer", never "this is the same person". Confirm against the official record, linked from every party, before acting.</p>
+<h2>Reuse</h2>
+<p>The source lists are public government publications. The merged dataset is released under CC0 through the <a href="{site_url}api/">API</a>. Attribution is appreciated, not required.</p>
+<h2>Contact</h2><p>Corrections and questions: open an issue on the project repository, or use the address on the API page.</p>"""
+    write(os.path.join(SITE, "about.html"), page("About", "Where SanctionScope's data comes from, how the six sanctions lists are merged and placed on the map, and what the site does and does not claim.", body, "", f"{site_url}about.html"))
+    urls.append("about.html")
 
     # ---------------- sitemap + robots
     if site_url:
