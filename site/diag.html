@@ -1,0 +1,23 @@
+<!doctype html><html><head><meta charset="utf-8"><title>SanctionScope map diagnostics</title><link rel="stylesheet" href="vendor/maplibre-gl.css">
+<style>body{margin:0;background:#0e1726;color:#eae6db;font:14px/1.5 Menlo,Consolas,monospace}#log{padding:14px;white-space:pre-wrap}#m{height:360px}</style></head><body>
+<div id="log">SanctionScope map diagnostics. Copy everything on this page and send it.\n</div><div id="m"></div>
+<script type="module">
+const L=[];const log=(...a)=>{L.push(a.join(' '));document.getElementById('log').textContent=L.join('\n');};
+const t0=performance.now();const t=()=>((performance.now()-t0)/1000).toFixed(1)+'s';
+log('ua:',navigator.userAgent);log('cores:',navigator.hardwareConcurrency,'webgl:',!!document.createElement('canvas').getContext('webgl2')||!!document.createElement('canvas').getContext('webgl'));
+try{const r=await fetch('data/map.json');const j=await r.json();log(t(),'data/map.json',r.status,'parts',j.parts.length,'edges',j.edges.length);
+  for(const p of j.parts){const rr=await fetch('data/'+p);log(t(),p,rr.status,rr.headers.get('content-length')||'?','bytes');}}catch(e){log('DATA ERROR',e.message);}
+try{const r=await fetch('vendor/maplibre-gl.mjs');log(t(),'maplibre-gl.mjs',r.status,r.headers.get('content-type'));const w=await fetch('vendor/maplibre-gl-worker.mjs');log(t(),'worker.mjs',w.status,w.headers.get('content-type'));}catch(e){log('VENDOR ERROR',e.message);}
+let style=null;try{const r=await fetch('https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json');style=await r.json();log(t(),'carto style',r.status,'layers',style.layers.length,'sources',Object.keys(style.sources).join(','));}catch(e){log('CARTO STYLE ERROR',e.message);}
+try{const m=await import('./vendor/maplibre-gl.mjs');log(t(),'maplibre import ok, version',m.getVersion?m.getVersion():'?');
+  const map=new m.Map({container:'m',style:style||{version:8,sources:{},layers:[{id:'bg',type:'background',paint:{'background-color':'#333'}}]},center:[20,30],zoom:1.5});
+  let tiles=0,errs=0;map.on('error',e=>{errs++;log(t(),'MAP ERROR',e.error&&e.error.message||JSON.stringify(e).slice(0,200));});
+  map.on('dataloading',e=>{if(e.tile)tiles++;});
+  map.on('load',()=>{log(t(),'map load event; style loaded',map.isStyleLoaded());
+    const pts={type:'FeatureCollection',features:Array.from({length:40000},(_,i)=>({type:'Feature',geometry:{type:'Point',coordinates:[(i*7)%360-180,(i*13)%160-80]},properties:{}}))};
+    const t1=performance.now();map.addSource('p',{type:'geojson',data:pts,cluster:true});map.addLayer({id:'p',type:'circle',source:'p',paint:{'circle-color':'#e9b44c','circle-radius':4}});
+    map.once('idle',()=>{log(t(),'40k test points rendered in',((performance.now()-t1)/1000).toFixed(1)+'s; rendered features',map.queryRenderedFeatures({layers:['p']}).length,'tiles requested',tiles,'errors',errs);
+      log('basemap layers present:',map.getStyle().layers.filter(l=>l.source&&l.source!=='p').length,'first layer ids:',map.getStyle().layers.slice(0,6).map(l=>l.id).join(', '));});});
+  setTimeout(()=>log(t(),'30s mark: loaded',map.loaded(),'tiles',tiles,'errors',errs),30000);
+}catch(e){log('MAPLIBRE ERROR',e.message,e.stack&&e.stack.slice(0,300));}
+</script></body></html>
