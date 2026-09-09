@@ -51,7 +51,14 @@ def shard_of(pid):
     return hashlib.sha1(pid.encode()).hexdigest()[:2]
 
 def build_api(site_url):
-    pay_link = os.environ.get("STRIPE_PAYMENT_LINK", "")
+    # payment link: site/config.json wins (easy to edit on GitHub); env var is the fallback
+    pay_link = os.environ.get("STRIPE_PAYMENT_LINK", ""); portal = "https://billing.stripe.com/p/login/7sYdR8fRmdRk1q05aO8IU00"
+    cfg_path = os.path.join(SITE, "config.json")
+    if os.path.exists(cfg_path):
+        try:
+            with open(cfg_path, encoding="utf-8") as f: cfg = json.load(f)
+            pay_link = cfg.get("payment_link") or pay_link; portal = cfg.get("billing_portal") or portal
+        except Exception: pass
     site_url = (site_url or "").rstrip("/") + "/" if site_url else "/"
     meta = load("meta.json"); data = load("parties.json"); changes = load("changes.json")
     parties, edges = data["parties"], data["edges"]
@@ -169,7 +176,7 @@ table{{border-collapse:collapse;width:100%;font-size:14px}}td,th{{text-align:lef
 <tr><td>Candidate depth for fuzzy matching</td><td>standard</td><td>deep</td></tr>
 <tr><td>Commercial use and support</td><td>at your own risk</td><td>yes, by email</td></tr>
 <tr><td>Price</td><td>free, no key</td><td>{('<a class="btn" href="' + esc(pay_link) + '">Subscribe</a>') if pay_link else 'coming soon'}</td></tr></table>
-<p class="sub">Pro keys are issued right after checkout and used as an <code>x-api-key</code> header or <code>?key=</code> parameter. Check a key at <code>GET me</code>. The key switches off automatically if the subscription ends.</p>
+<p class="sub">Pro keys are issued right after checkout and used as an <code>x-api-key</code> header or <code>?key=</code> parameter. Check a key at <code>GET me</code>. The key switches off automatically if the subscription ends. Subscribers can update their card, download invoices or cancel at the <a href="{esc(portal)}">billing portal</a>.</p>
 <h2>Examples</h2>
 <pre>curl "{ex}search?q=sberbank"
 curl "{ex}party/ofa:12345"
