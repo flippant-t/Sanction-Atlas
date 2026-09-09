@@ -101,7 +101,7 @@
 </style>
 </head>
 <body>
-<nav id="topnav"><a class="brand" href="./">Sanction<b>Scope</b></a><a href="./" class="on">Map</a><a href="screen.html">Screen a list</a><a href="programs/">Programs</a><a href="countries/">Countries</a><a href="parties/">Parties</a><a href="api/">API</a><a href="about.html">About</a><span class="grow"></span><span id="navstamp"></span><span class="railbtn" id="railCollapse" title="Hide or show the side panel">Panel</span><a class="cta" href="api/subscribe">API Pro</a></nav>
+<nav id="topnav"><a class="brand" href="./">Sanction<b>Scope</b></a><a href="./" class="on">Map</a><a href="screen.html">Screen a list</a><a href="programs/">Programs</a><a href="countries/">Countries</a><a href="parties/">Parties</a><a href="vessels/">Vessels</a><a href="api/">API</a><a href="about.html">About</a><span class="grow"></span><span id="navstamp"></span><span class="railbtn" id="railCollapse" title="Hide or show the side panel">Panel</span><a class="cta" href="api/subscribe">API Pro</a></nav>
 <div id="app">
   <aside id="rail">
     <div class="sec">
@@ -124,6 +124,12 @@
         <div class="muted" id="cmpNote" style="margin-top:6px;display:none"></div>
         <div class="row" id="chgOpts" style="margin-top:6px;display:none"><span class="muted">Added in the last</span><select id="chgWin" class="search" style="width:auto;padding:3px 6px;font-size:12px"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option></select></div>
       </div>
+    </div>
+
+    <div class="sec">
+      <h2>Live vessels <span class="more"><a href="vessels/" style="color:inherit;text-decoration:none">full list</a></span></h2>
+      <label class="chk"><input type="checkbox" id="aisOn">Show last AIS positions of sanctioned ships</label>
+      <div class="muted" id="aisNote">Positions from aisstream.io, refreshed every 15 minutes. Sanctioned tankers often switch AIS off; a missing ship means nothing on its own.</div>
     </div>
 
     <div class="sec"><h2>Listed by</h2><div id="auBox"></div></div>
@@ -205,7 +211,7 @@ let filters={src:new Set(),type:new Set(),prog:new Set(),au:new Set()};let compa
 let YEAR=2026,UNDATED=true,CHG=null,INCL_INF=true,ADDED=new Set();
 let VISIBLE=[],VEDGES=[],selected=null,COUNTRY_STATS=new Map(),CHANGE_CC=new Map(),countryCounts=new Map(),feedExpanded=false,urlLock=false;
 let centroidByISO=new Map(),nameByISO={},COUNTRIES;
-let map,popup,styleReady=false;
+let map,popup,styleReady=false;let AIS=null;
 
 // ============================================================ helpers
 const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -324,6 +330,14 @@ function addLayers(){
     'circle-opacity':['case',['==',['get','inf'],1],0,['==',['get','sel'],1],1,0.9],
     'circle-stroke-color':['case',['==',['get','sel'],1],'#ffffff',['get','col']],'circle-stroke-width':['case',['==',['get','sel'],1],2,['==',['get','inf'],1],1.4,0]}});
   map.addLayer({id:'points-ring',type:'circle',source:'pts',filter:['all',['!',['has','point_count']],['==',['get','multi'],1]],paint:{'circle-color':'rgba(0,0,0,0)','circle-radius':['interpolate',['linear'],['zoom'],3,5,8,8,14,11],'circle-stroke-color':'#ffffff','circle-stroke-width':0.8,'circle-stroke-opacity':0.7}});
+  map.addSource('ais-trail',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+  map.addLayer({id:'ais-trail',type:'line',source:'ais-trail',paint:{'line-color':'#7fd1b9','line-width':1.2,'line-opacity':0.6}});
+  map.addSource('ais',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+  map.addLayer({id:'ais-heading',type:'line',source:'ais',filter:['==',['geometry-type'],'LineString'],paint:{'line-color':'#7fd1b9','line-width':2}});
+  map.addLayer({id:'ais',type:'circle',source:'ais',filter:['==',['geometry-type'],'Point'],paint:{'circle-radius':['interpolate',['linear'],['zoom'],1,4,8,7],'circle-color':['case',['>',['get','age'],48],'#6f6a5e','#7fd1b9'],'circle-stroke-color':'#0b1321','circle-stroke-width':1.5}});
+  map.on('click','ais',e=>{const f=e.features[0];const p=BYID.get(f.properties.id);if(p)select(p,false);});
+  map.on('mouseenter','ais',()=>map.getCanvas().style.cursor='pointer');map.on('mouseleave','ais',()=>{map.getCanvas().style.cursor='';popup.remove();});
+  map.on('mousemove','ais',e=>{const f=e.features[0].properties;popup.setLngLat(e.features[0].geometry.coordinates).setHTML(`<b>${esc(f.name)}</b><br><span style="color:#a8a294">${esc(f.when)} · ${f.sog!=null?f.sog+' kn':''} ${f.dest?'· to '+esc(f.dest):''}</span>`).addTo(map);});
   styleReady=true;
   map.on('click','clusters',e=>{const f=e.features[0];map.getSource('pts').getClusterExpansionZoom(f.properties.cluster_id).then(z=>map.easeTo({center:f.geometry.coordinates,zoom:Math.min(14,Math.max(z,map.getZoom()+2.2)),duration:700}));});
   map.on('click','points',e=>{const p=BYID.get(e.features[0].properties.id);if(p)select(p,false);});
@@ -344,6 +358,25 @@ async function loadStyle(){
     return st;}
   catch{return {version:8,glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',sources:{},layers:[{id:'bg',type:'background',paint:{'background-color':'#0b1321'}}],metadata:{fallback:true}};}
 }
+
+// ============================================================ live AIS
+function agoText(ts){if(!ts)return 'no position';const h=(Date.now()-Date.parse(ts.replace(' ','T')+'Z'))/36e5;return h<1?`${Math.round(h*60)} min ago`:h<48?`${Math.round(h)} h ago`:`${Math.round(h/24)} days ago`;}
+async function loadAIS(){
+  if(AIS)return AIS;try{AIS=await (await fetch('api/v1/vessels')).json();}catch{AIS={positions:{},meta:{}};}return AIS;
+}
+async function pushAIS(){
+  const on=document.getElementById('aisOn').checked;const note=document.getElementById('aisNote');
+  if(!on){map.getSource('ais').setData({type:'FeatureCollection',features:[]});map.getSource('ais-trail').setData({type:'FeatureCollection',features:[]});return;}
+  const d=await loadAIS();const pts=[],trails=[];let recent=0;
+  for(const [mmsi,p] of Object.entries(d.positions||{})){if(p.lat==null)continue;const party=BYID.get(p.id);const age=(Date.now()-Date.parse((p.ts||'').replace(' ','T')+'Z'))/36e5;if(age<24)recent++;
+    pts.push({type:'Feature',geometry:{type:'Point',coordinates:[p.lon,p.lat]},properties:{id:p.id,name:party?party.n:p.name||mmsi,when:agoText(p.ts),sog:p.sog,dest:p.dest||'',age}});
+    const hd=p.hdg!=null&&p.hdg<360?p.hdg:(p.cog!=null?p.cog:null);
+    if(hd!=null){const r=hd*Math.PI/180,len=0.25;pts.push({type:'Feature',geometry:{type:'LineString',coordinates:[[p.lon,p.lat],[p.lon+len*Math.sin(r)/Math.max(0.2,Math.cos(p.lat*Math.PI/180)),p.lat+len*Math.cos(r)]]},properties:{id:p.id}});}
+    if(p.trail&&p.trail.length>1)trails.push({type:'Feature',geometry:{type:'LineString',coordinates:p.trail.map(t=>[t[1],t[0]])},properties:{}});}
+  map.getSource('ais').setData({type:'FeatureCollection',features:pts});map.getSource('ais-trail').setData({type:'FeatureCollection',features:trails});
+  const m=d.meta||{};note.textContent=`${pts.filter(f=>f.geometry.type==='Point').length} of ${(m.roster||META.vessels_with_imo||0).toLocaleString()} sanctioned ships with a known position, ${recent} seen in the last 24 h. Updated ${m.updated?agoText(m.updated.replace('T',' ').replace('Z','')):'never'}. Grey = last seen over 48 h ago.`;
+}
+document.getElementById('aisOn').addEventListener('change',pushAIS);
 
 // ============================================================ UI rendering
 function chkRow(label,count,color,checked,onchange){
@@ -460,6 +493,9 @@ async function openDrawer(p){
   const others=[],seen=new Set();
   for(const e of p.edges){if(e.b){const q=e.a===p?e.b:e.a;if(!seen.has(q.id)){seen.add(q.id);others.push({q});}}else others.push({why:e.k==='foot'?'also at '+e.l:'national of '+e.l});}
   const links=others.length?'<dt>Lines</dt><dd><ul class="links">'+others.map(o=>o.q?`<li data-i="${esc(o.q.id)}">${esc(o.q.n)}<span>${esc(o.q.type)}, ${esc(o.q.city||nameByISO[o.q.cc]||'')}</span></li>`:`<li style="cursor:default;color:var(--ink-2)">${esc(o.why)}</li>`).join('')+'</ul></dd>':'';
+  if(p.t==='V'){const d=await loadAIS();const rec=Object.values(d.positions||{}).find(x=>x.id===p.id);
+    if(rec&&rec.lat!=null)rows.push(`<dt>Last AIS</dt><dd>${esc(agoText(rec.ts))}${rec.sog!=null?`, ${rec.sog} kn`:''}${rec.dest?`, destination ${esc(rec.dest)}`:''}<br><span class="muted">${rec.lat.toFixed(3)}, ${rec.lon.toFixed(3)} · aisstream.io</span> <a href="#" class="aisgo">show on map</a></dd>`);
+    else rows.push(`<dt>Last AIS</dt><dd class="small">No position seen since tracking began. Sanctioned vessels commonly disable AIS.</dd>`);}
   const hasNet=p.edges.some(e=>e.b);
   b.innerHTML=`<h3>${esc(p.n)}</h3><div class="kind"><i style="background:${SRC_COLOR[p.s]}"></i>${esc(p.type)} · ${esc(p.s)}${r&&r.list?' · '+esc(r.list):''}</div>
   <div class="tools"><button class="btn" id="share">Copy link</button>${r&&r.pg?`<a class="btn" href="parties/${esc(r.pg)}.html">Full page</a>`:''}${p.cc?`<button class="btn" id="cty">${esc(nameByISO[p.cc]||p.cc)}</button>`:''}${p.x!=null?`<button class="btn" id="zoomp">Zoom here</button>`:''}</div>
@@ -468,6 +504,7 @@ async function openDrawer(p){
   if(p.cc)b.querySelector('#cty').onclick=()=>openCountry(p.cc);
   const zp=b.querySelector('#zoomp');if(zp)zp.onclick=()=>flyTo([p.x,p.y],12);
   b.querySelectorAll('li[data-i]').forEach(li=>li.onclick=()=>{const q=BYID.get(li.dataset.i);if(q)select(q,true);});
+  const ag=b.querySelector('.aisgo');if(ag)ag.onclick=async e=>{e.preventDefault();document.getElementById('aisOn').checked=true;await pushAIS();const rec=Object.values((AIS||{}).positions||{}).find(x=>x.id===p.id);if(rec)flyTo([rec.lon,rec.lat],7);};
   const ml=b.querySelector('.morelink');if(ml)ml.onclick=e=>{e.preventDefault();b.querySelector('.clip').style.display='none';b.querySelector('.full').style.display='';};
   if(hasNet)drawNet(p);
 }
@@ -554,6 +591,7 @@ const STORIES=[
   {t:'United States versus United Kingdom',x:'The UK list after Brexit tracks the EU on Russia but the US on much else. Switch the compare menu to any pair to keep exploring.',st:{cmp:'US|UK',reset:true}}]},
  {title:'The shadow fleet',blurb:'Sanctioned vessels and their flags',steps:[
   {t:'Ships only',x:'Most vessels publish no address, so they sit on the country of their flag state. Watch where they cluster.',st:{kind:['Vessel'],reset:true}},
+  {t:'Where they actually are',x:'Teal markers are live AIS positions of sanctioned ships, with a 24-hour trail; grey ones were last heard over two days ago. Many go dark on purpose.',st:{kind:['Vessel'],ais:true,reset:true}},
   {t:'Flags of convenience',x:'Panama, Liberia, the Marshall Islands, Gabon, Cameroon: the flags used by tankers moving Russian and Iranian oil outside the price cap.',st:{kind:['Vessel'],c:'PA',k:3}},
   {t:'Iranian oil',x:'Filter to Iran-related programs and the fleet lights up around Bandar Abbas and the Gulf.',st:{kind:['Vessel'],cat:'Iran',c:'IR',k:4.5}}]},
  {title:"Iran's network",blurb:'From the IRGC outward, two hops at a time',steps:[
@@ -576,6 +614,7 @@ function applyState(st){
   if(st.reset||st.cmp!==undefined||st.kind||st.prog||st.cat){filters.src=new Set(Object.keys(META.sources));filters.type=new Set(Object.keys(META.types));filters.prog=new Set(META.programs.map((_,i)=>i));filters.au=new Set(Object.keys(META.authorities||{US:1}));compare='';document.getElementById('onlyLinked').checked=false;}
   if(st.kind)filters.type=new Set(st.kind);if(st.prog){const names=new Set(st.prog);filters.prog=new Set(META.programs.map((p,i)=>names.has(p[0])?i:-1).filter(i=>i>=0));}if(st.cat)filters.prog=new Set(CAT_PROGS.get(st.cat)||[]);
   if(st.onlyLinked)document.getElementById('onlyLinked').checked=true;
+  document.getElementById('aisOn').checked=!!st.ais;pushAIS();
   renderFilters();if(st.cmp){compare=st.cmp;setMode('compare');}else setMode('parties');urlLock=false;writeURL();
   selected=null;closeDrawer();
   if(st.find){const p=PARTIES.find(q=>q.n===st.find&&q.x!=null)||PARTIES.find(q=>q.n.toUpperCase().includes(st.find)&&q.x!=null);if(p)select(p,!st.c);}
@@ -616,7 +655,7 @@ async function boot(){
   popup=new maplibregl.Popup({closeButton:false,closeOnClick:false,offset:8});
   map.on('load',()=>{if(style.metadata&&style.metadata.fallback){map.addSource('land',{type:'geojson',data:COUNTRIES});map.addLayer({id:'land',type:'fill',source:'land',paint:{'fill-color':'#1b2738'}});}addLayers();loadingEl.style.display='none';readURL();});
   map.on('error',e=>{console.warn('map error',e&&e.error&&e.error.message);});
-  window.__ss={get map(){return map},get VISIBLE(){return VISIBLE},get PARTIES(){return PARTIES},get filters(){return filters},get MODE(){return MODE},get compare(){return compare},select,openCountry,setMode,update,centroidByISO};
+  window.__ss={get AIS(){return AIS},get map(){return map},get VISIBLE(){return VISIBLE},get PARTIES(){return PARTIES},get filters(){return filters},get MODE(){return MODE},get compare(){return compare},select,openCountry,setMode,update,centroidByISO};
 }
 boot().catch(err=>{document.getElementById('loading').textContent='Could not load: '+err.message;console.error(err);});
 </script>

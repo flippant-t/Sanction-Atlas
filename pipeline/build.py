@@ -620,6 +620,18 @@ def main():
     iso_name = {iso: c["name"] for iso, c in COUNTRIES.items()}
     iso_numeric["XK"] = -99; iso_name["XK"] = "Kosovo"
 
+    # vessel roster for the AIS collector: every vessel with an IMO (7 digits) or MMSI (9 digits) anywhere in its record
+    imo_re = re.compile(r"\bIMO\s*(?:No\.?|Number)?[:\s]*(\d{7})\b", re.I); mmsi_re = re.compile(r"\bMMSI\s*[:\s]*(\d{9})\b", re.I)
+    roster = []
+    for p in parties:
+        if p["t"] != "Vessel": continue
+        blob = " ".join([p["ids"], p["rem"], p["ves"]] + p["alt"])
+        imos = sorted(set(imo_re.findall(blob))); mmsis = sorted(set(mmsi_re.findall(blob)))
+        if not imos and not mmsis: continue
+        roster.append({"id": p["id"], "n": p["n"], "imo": imos[0] if imos else None, "mmsi": mmsis[0] if mmsis else None, "au": p["au"], "flag": p.get("flag") or "", "cc": p["cc"], "s": p["s"]})
+    with open(os.path.join(OUT, "vessels.json"), "w", encoding="utf-8") as f:
+        json.dump({"date": today, "count": len(roster), "vessels": roster}, f, separators=(",", ":"), ensure_ascii=False)
+    meta_vessels = len(roster)
     meta = {
         "built": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"), "date": today,
         "source": CSL_URL, "parties": len(parties), "placed": placed, "with_city": with_city,
@@ -628,7 +640,7 @@ def main():
         "countries": dict(countries), "iso_numeric": iso_numeric, "iso_name": iso_name, "src_list": src_list,
         "added_today": changes["added_today"], "removed_today": changes["removed_today"],
         "authorities": {a: {"n": auth_counts.get(a, 0), **status.get(a, {"ok": False, "n": 0, "error": "not loaded"})} for a in AUTH_ORDER},
-        "multi_listed": multi, "dated": sum(1 for p in compact if p.get("ly")),
+        "multi_listed": multi, "dated": sum(1 for p in compact if p.get("ly")), "vessels_with_imo": meta_vessels,
     }
     # Hosts cap single files (Cloudflare Pages: 25 MB), so the party list is written in parts plus a manifest.
     for old in os.listdir(OUT):

@@ -236,6 +236,30 @@ def build_pages(site_url):
     write(os.path.join(SITE, "about.html"), page("About", "Where SanctionScope's data comes from, how the six sanctions lists are merged and placed on the map, and what the site does and does not claim.", body, "", f"{site_url}about.html", on="About"))
     urls.append("about.html")
 
+    # ---------------- vessels page (roster static, positions filled live from /api/v1/vessels)
+    vpath = os.path.join(DATA, "vessels.json")
+    if os.path.exists(vpath):
+        with open(vpath, encoding="utf-8") as f: roster = json.load(f)["vessels"]
+        rows_html = "".join(f'<tr data-id="{esc(v["id"])}"><td><a href="{("../parties/" + byid[v["id"]]["pg"] + ".html") if byid.get(v["id"], {}).get("pg") else ("../#p=" + esc(v["id"]))}">{esc(v["n"])}</a></td><td>{esc(v.get("imo") or "")}</td><td>{esc(iso_name.get(v.get("cc"), v.get("cc") or ""))}</td><td>{esc(", ".join(AUTH_NAME.get(a, a) for a in v.get("au", [])))}</td><td class="ais">…</td></tr>' for v in sorted(roster, key=lambda v: v["n"]))
+        body = f"""<h1>Sanctioned vessels</h1><p class="lede">{len(roster):,} ships on the US, EU, UK, UN, Australian and Canadian lists with a published IMO number, and where AIS last heard from them. Positions refresh every 15 minutes; a ship that has gone quiet is flagged.</p>
+<div class="stats" id="vstats"><div class="stat"><b>{len(roster):,}</b><span>sanctioned vessels with IMO</span></div><div class="stat"><b id="vseen">…</b><span>with a known position</span></div><div class="stat"><b id="v24">…</b><span>heard in the last 24 h</span></div><div class="stat"><b id="vdark">…</b><span>silent over 7 days</span></div></div>
+<div class="row" style="margin:10px 0"><input class="btn" id="vq" placeholder="Filter by name, IMO, flag" style="min-width:260px"><label class="small"><input type="checkbox" id="vonly"> only ships with a position</label><a class="btn" href="../#kind=Vessel">Open on the map</a></div>
+<table id="vt"><tr><th>Vessel</th><th>IMO</th><th>Flag / country</th><th>Listed by</th><th>Last AIS</th></tr>{rows_html}</table>
+<p class="meta">AIS data via aisstream.io, terrestrial coverage only. Absence of a position is not evidence of anything by itself. Verify every vessel against the official record before acting.</p>
+<script>
+(async()=>{{const t=document.getElementById('vt');let d={{positions:{{}}}};try{{d=await (await fetch('../api/v1/vessels')).json();}}catch{{}}
+const byId={{}};for(const p of Object.values(d.positions||{{}}))if(p.id)byId[p.id]=p;
+const ago=ts=>{{if(!ts)return null;const h=(Date.now()-Date.parse(ts.replace(' ','T')+'Z'))/36e5;return h;}};
+let seen=0,h24=0,dark=0;
+for(const tr of t.querySelectorAll('tr[data-id]')){{const p=byId[tr.dataset.id];const td=tr.querySelector('.ais');if(!p||p.lat==null){{td.textContent='never heard';td.className='ais meta';continue;}}seen++;const h=ago(p.ts);if(h<24)h24++;if(h>168)dark++;
+  td.innerHTML=(h<1?Math.round(h*60)+' min ago':h<48?Math.round(h)+' h ago':Math.round(h/24)+' days ago')+(p.sog!=null?', '+p.sog+' kn':'')+(p.dest?', to '+p.dest.replace(/</g,''):'')+` <a href="../#p=${{encodeURIComponent(tr.dataset.id)}}">map</a>`;if(h>168)td.style.color='#e07a7a';tr.dataset.seen='1';}}
+document.getElementById('vseen').textContent=seen.toLocaleString();document.getElementById('v24').textContent=h24.toLocaleString();document.getElementById('vdark').textContent=dark.toLocaleString();
+const f=()=>{{const q=document.getElementById('vq').value.toLowerCase();const only=document.getElementById('vonly').checked;for(const tr of t.querySelectorAll('tr[data-id]')){{const ok=(!q||tr.textContent.toLowerCase().includes(q))&&(!only||tr.dataset.seen);tr.style.display=ok?'':'none';}}}};
+document.getElementById('vq').oninput=f;document.getElementById('vonly').onchange=f;}})();
+</script>"""
+        write(os.path.join(SITE, "vessels", "index.html"), page("Sanctioned vessels and their last AIS position", f"{len(roster):,} sanctioned ships with IMO numbers and where AIS last heard from them, refreshed every 15 minutes.", body, "../", f"{site_url}vessels/"))
+        urls.append("vessels/")
+
     # ---------------- terms + privacy
     terms = f"""<h1>Terms of service</h1><p class="lede">Plain-language terms for using sanctionscope.com and its API. Last updated {today}.</p>
 <h2>What SanctionScope is</h2><p>SanctionScope is a reference and research tool. It republishes, merges and visualises sanctions and export-control lists published by government authorities. It is not legal advice, not a compliance system of record, and not a substitute for the official lists or for professional advice. A name match on this site means only that a listed name resembles the name you searched; it does not establish that they are the same person or entity.</p>

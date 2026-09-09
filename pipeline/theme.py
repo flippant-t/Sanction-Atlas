@@ -48,7 +48,7 @@ footer a{color:var(--ink-2);text-decoration:none}footer a:hover{color:var(--ink)
 def esc(s): return html.escape(str(s or ""))
 
 def header(rel, on=""):
-    items = [("Map", ""), ("Screen a list", "screen.html"), ("Programs", "programs/"), ("Countries", "countries/"), ("Parties", "parties/"), ("API", "api/"), ("About", "about.html")]
+    items = [("Map", ""), ("Screen a list", "screen.html"), ("Programs", "programs/"), ("Countries", "countries/"), ("Parties", "parties/"), ("Vessels", "vessels/"), ("API", "api/"), ("About", "about.html")]
     links = "".join(f'<a href="{rel}{h}"{" class=on" if k == on else ""}>{k}</a>' for k, h in items)
     return f'<div class="nav"><div class="in"><a class="brand" href="{rel}">Sanction<b>Scope</b></a>{links}<span class="grow"></span><a class="cta" href="{rel}api/subscribe">API Pro</a></div></div>'
 
