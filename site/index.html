@@ -176,7 +176,7 @@
     </details>
 
     <div class="sec muted">
-      Sources: US Consolidated Screening List (OFAC, BIS, State), EU, UK, UN, Australian and Canadian consolidated lists. Cross-list matching is by name and approximate. Basemap © OpenStreetMap contributors, © CARTO.
+      Sources: US Consolidated Screening List (OFAC, BIS, State), EU, UK, UN, Australian and Canadian consolidated lists. Cross-list matching is by name and approximate. Basemap © OpenStreetMap contributors, via OpenFreeMap.
       <div style="margin-top:8px"><a href="about.html">About</a> · <a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> · <a href="api/v1/feed.xml">RSS</a> · <a href="mailto:hello@sanctionscope.com">Contact</a></div>
     </div>
   </aside>
@@ -311,7 +311,7 @@ function pushDataNow(){
   map.setPaintProperty('countries-line','line-opacity',choroOnly?0.6:0.25);
 }
 function addLayers(){
-  const firstSymbol=undefined;
+  const firstSymbol=(map.getStyle().layers.find(l=>l.type==='symbol')||{}).id;
   map.addSource('countries',{type:'geojson',data:COUNTRIES});
   map.addLayer({id:'countries-fill',type:'fill',source:'countries',paint:{'fill-color':'rgba(0,0,0,0)','fill-opacity':1}},firstSymbol);
   map.addLayer({id:'countries-line',type:'line',source:'countries',paint:{'line-color':'#e9b44c','line-width':0.5,'line-opacity':0.12}},firstSymbol);
@@ -354,12 +354,23 @@ function addLayers(){
   map.on('mousemove',e=>{if(MODE!=='score')return;const c=map.queryRenderedFeatures(e.point,{layers:['countries-fill']});const iso=c.length&&c[0].properties.iso;const s=iso&&COUNTRY_STATS.get(iso);map.getCanvas().style.cursor=s?'pointer':'';if(s){popup.setLngLat(e.lngLat).setHTML(`<b>${esc(nameByISO[iso])}</b><br><span style="color:#a8a294">intensity ${s.score} · ${s.n.toLocaleString()} parties · ${s.progs.size} programs · click for details</span>`).addTo(map);}else popup.remove();});
 }
 async function loadStyle(){
-  // Raster basemap: CARTO dark matter as pre-rendered image tiles. No vector decoding in workers, so it cannot stall
-  // behind our own data and renders identically in every browser. Labels come with the tiles.
-  const sub=['a','b','c','d'];
-  return {version:8,projection:{type:'globe'},glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-    sources:{carto:{type:'raster',tiles:sub.map(x=>`https://${x}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png`),tileSize:256,maxzoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, © <a href="https://carto.com/attributions">CARTO</a>'}},
-    layers:[{id:'bg',type:'background',paint:{'background-color':'#0b1321'}},{id:'carto',type:'raster',source:'carto',paint:{'raster-opacity':0.92,'raster-brightness-max':0.85,'raster-saturation':-0.2}}]};
+  // Basemap: OpenFreeMap (free, no key, commercial use allowed), recoloured to the site's dark palette.
+  // CARTO's basemaps now require an API key, which is why earlier versions showed no land.
+  try{
+    const r=await fetch('https://tiles.openfreemap.org/styles/positron',{signal:AbortSignal.timeout(8000)});if(!r.ok)throw 0;const st=await r.json();
+    st.projection={type:'globe'};
+    const water=/water|ocean|sea|lake|river/i, road=/road|highway|motorway|street|path|rail|bridge|tunnel|transit|aeroway|runway/i, bld=/building/i, boundary=/boundary|admin|border/i, green=/park|wood|forest|grass|landcover|landuse|glacier|scrub|farmland|cemetery|pitch|ice/i;
+    for(const l of st.layers){
+      l.paint=l.paint||{};
+      if(l.type==='background'){l.paint['background-color']='#101b2d';continue;}
+      if(l.type==='fill'){l.paint['fill-color']=water.test(l.id)?'#0b1321':bld.test(l.id)?'#1a2740':green.test(l.id)?'#152239':'#152036';l.paint['fill-outline-color']=water.test(l.id)?'#0b1321':'#1d2b45';delete l.paint['fill-pattern'];continue;}
+      if(l.type==='line'){l.paint['line-color']=boundary.test(l.id)?'#3a4d69':water.test(l.id)?'#0f1a2b':road.test(l.id)?'#25344d':'#22304a';continue;}
+      if(l.type==='symbol'){l.paint['text-color']=water.test(l.id)?'#3f5a7a':'#a8a294';l.paint['text-halo-color']='#0b1321';l.paint['text-halo-width']=1.2;if(l.paint['icon-color'])l.paint['icon-color']='#a8a294';continue;}
+      if(l.type==='fill-extrusion'){l.paint['fill-extrusion-color']='#1a2740';}
+    }
+    return st;
+  }catch(e){console.warn('basemap unavailable, drawing plain land',e);
+    return {version:8,projection:{type:'globe'},glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',sources:{},layers:[{id:'bg',type:'background',paint:{'background-color':'#0b1321'}}],metadata:{fallback:true}};}
 }
 
 // ============================================================ live AIS
@@ -657,7 +668,7 @@ async function boot(){
   document.getElementById('globeBtn').classList.add('on');
   map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-left');
   popup=new maplibregl.Popup({closeButton:false,closeOnClick:false,offset:8});
-  let setupDone=false;const onLoad=()=>{if(setupDone)return;setupDone=true;try{addLayers();readURL();}catch(e){console.error('setup failed',e);toast('Map setup failed: '+e.message);}loadingEl.style.display='none';};
+  let setupDone=false;const onLoad=()=>{if(setupDone)return;setupDone=true;try{if(style.metadata&&style.metadata.fallback){map.addSource('land',{type:'geojson',data:COUNTRIES});map.addLayer({id:'land',type:'fill',source:'land',paint:{'fill-color':'#152036'}});}addLayers();readURL();}catch(e){console.error('setup failed',e);toast('Map setup failed: '+e.message);}loadingEl.style.display='none';};
   map.once('load',onLoad);const poll=setInterval(()=>{if(setupDone){clearInterval(poll);return;}if(map.isStyleLoaded()){map.triggerRepaint();if(map.loaded())onLoad();}},500);
   map.on('error',e=>{console.warn('map error',e&&e.error&&e.error.message);});
   window.__ss={get AIS(){return AIS},get map(){return map},get VISIBLE(){return VISIBLE},get PARTIES(){return PARTIES},get filters(){return filters},get MODE(){return MODE},get compare(){return compare},select,openCountry,setMode,update,centroidByISO};
