@@ -175,8 +175,8 @@ table{{border-collapse:collapse;width:100%;font-size:14px}}td,th{{text-align:lef
 <tr><td>screen names per request</td><td>100</td><td>500</td></tr>
 <tr><td>Candidate depth for fuzzy matching</td><td>standard</td><td>deep</td></tr>
 <tr><td>Commercial use and support</td><td>at your own risk</td><td>yes, by email</td></tr>
-<tr><td>Price</td><td>free, no key</td><td>{('<a class="btn" href="' + esc(pay_link) + '">Subscribe</a>') if pay_link else 'coming soon'}</td></tr></table>
-<p class="sub">Pro keys are issued right after checkout and used as an <code>x-api-key</code> header or <code>?key=</code> parameter. Check a key at <code>GET me</code>. The key switches off automatically if the subscription ends. Subscribers can update their card, download invoices or cancel at the <a href="{esc(portal)}">billing portal</a>.</p>
+<tr><td>Price</td><td>free, no key</td><td><a class="btn" href="{site_url}api/subscribe">Subscribe</a></td></tr></table>
+<p class="sub">Pro keys are issued right after checkout and used as an <code>x-api-key</code> header or <code>?key=</code> parameter. Check a key at <code>GET me</code>. The key switches off automatically if the subscription ends. Subscribers can update their card, download invoices or cancel at the <a href="{site_url}api/portal">billing portal</a>.</p>
 <h2>Examples</h2>
 <pre>curl "{ex}search?q=sberbank"
 curl "{ex}party/ofa:12345"
