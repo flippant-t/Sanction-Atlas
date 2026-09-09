@@ -1,0 +1,18 @@
+<!doctype html><html><head><meta charset="utf-8"><title>SanctionScope map diagnostics 2</title>
+<style>body{margin:0;background:#0e1726;color:#eae6db;font:13px/1.5 Menlo,Consolas,monospace}#log{padding:12px;white-space:pre-wrap;height:40vh;overflow:auto;border-bottom:1px solid #26344a}iframe{width:100%;height:58vh;border:0}</style></head><body>
+<div id="log">Loads the real map page below and reports what it does. Wait 40 seconds, copy this box, send it.\n</div>
+<iframe id="f" src="./"></iframe>
+<script>
+const L=[];const log=(...a)=>{L.push(a.join(' '));const el=document.getElementById('log');el.textContent=L.join('\n');el.scrollTop=1e9;};
+const t0=performance.now();const t=()=>((performance.now()-t0)/1000).toFixed(1)+'s';
+const f=document.getElementById('f');
+f.addEventListener('load',()=>{const w=f.contentWindow;log(t(),'frame loaded');
+  w.addEventListener('error',e=>log(t(),'JS ERROR:',e.message,'@',(e.filename||'').split('/').pop()+':'+e.lineno));
+  w.addEventListener('unhandledrejection',e=>log(t(),'PROMISE ERROR:',e.reason&&(e.reason.message||String(e.reason)).slice(0,300)));
+  const origErr=w.console.error;w.console.error=(...a)=>{log(t(),'console.error:',a.map(x=>String(x&&x.message||x)).join(' ').slice(0,300));origErr.apply(w.console,a);};
+  const origWarn=w.console.warn;w.console.warn=(...a)=>{log(t(),'console.warn:',a.map(x=>String(x&&x.message||x)).join(' ').slice(0,300));origWarn.apply(w.console,a);};
+  let n=0;const iv=setInterval(()=>{n++;try{const s=w.__ss;const d=w.document;const loading=d.getElementById('loading');const m=s&&s.map;
+      log(t(),'loading overlay:',loading?loading.style.display||'shown':'?', '| __ss:',!!s,'| parties:',s?s.PARTIES.length:'-','visible:',s?s.VISIBLE.length:'-', '| map:',m?('loaded='+m.loaded()+' style='+m.isStyleLoaded()+' zoom='+m.getZoom().toFixed(2)+' clusters='+m.queryRenderedFeatures({layers:['clusters']}).length+' points='+m.queryRenderedFeatures({layers:['points']}).length+' countries='+m.queryRenderedFeatures({layers:['countries-fill']}).length+' layers='+m.getStyle().layers.length):'none');
+    }catch(e){log(t(),'probe error',e.message);} if(n>=14)clearInterval(iv);},3000);
+});
+</script></body></html>
