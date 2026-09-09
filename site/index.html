@@ -306,7 +306,7 @@ function addLayers(){
   const firstSymbol=(map.getStyle().layers.find(l=>l.type==='symbol')||{}).id;
   map.addSource('countries',{type:'geojson',data:COUNTRIES});
   map.addLayer({id:'countries-fill',type:'fill',source:'countries',paint:{'fill-color':'rgba(0,0,0,0)','fill-opacity':1}},firstSymbol);
-  map.addLayer({id:'countries-line',type:'line',source:'countries',paint:{'line-color':'#3a4d69','line-width':0.6,'line-opacity':0.25}},firstSymbol);
+  map.addLayer({id:'countries-line',type:'line',source:'countries',paint:{'line-color':'#3a4d69','line-width':0.6,'line-opacity':0.35}},firstSymbol);
   map.addSource('lines',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
   map.addLayer({id:'lines',type:'line',source:'lines',layout:{'line-cap':'round'},filter:['any',['==',['get','k'],'link'],['==',['get','f'],1],['>=',['zoom'],3]],paint:{
     'line-color':['match',['get','k'],'link','#f0d9a6','foot','#5fb8c4','#b18fd9'],
@@ -335,7 +335,12 @@ function addLayers(){
 }
 async function loadStyle(){
   try{const r=await fetch(BASEMAP_LABELS,{signal:AbortSignal.timeout(6000)});if(!r.ok)throw 0;const st=await r.json();
-    for(const l of st.layers){if(l.type==='background')l.paint={...(l.paint||{}),'background-color':'#0b1321'};if(l.id&&/water/.test(l.id)&&l.type==='fill')l.paint={...(l.paint||{}),'fill-color':'#0b1321'};}
+    // land a shade lighter than water so coastlines read; keep CARTO's own borders and labels
+    for(const l of st.layers){
+      if(l.type==='background')l.paint={...(l.paint||{}),'background-color':'#18243a'};
+      if(l.id&&/water/.test(l.id)&&l.type==='fill')l.paint={...(l.paint||{}),'fill-color':'#0b1321'};
+      if(l.id&&/landcover|landuse|park/.test(l.id)&&l.type==='fill')l.paint={...(l.paint||{}),'fill-color':'#1b2940','fill-opacity':0.6};
+    }
     return st;}
   catch{return {version:8,glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',sources:{},layers:[{id:'bg',type:'background',paint:{'background-color':'#0b1321'}}],metadata:{fallback:true}};}
 }
