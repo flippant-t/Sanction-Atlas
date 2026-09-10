@@ -249,13 +249,43 @@ GENERIC = {"BANK", "RUSSIA", "RUSSIAN", "FEDERATION", "TRADING", "TRADE", "INTER
            "REPUBLIC", "ISLAMIC", "REVOLUTIONARY", "SYRIAN", "SYRIA", "CHINA", "CHINESE", "BELARUS", "BELARUSIAN", "UKRAINE", "UKRAINIAN", "VENEZUELA", "CUBA",
            "MYANMAR", "BURMA", "LIBYA", "LIBYAN", "IRAQ", "IRAQI", "AFGHAN", "TURKISH", "ARAB", "GULF", "PACIFIC", "ATLANTIC", "EAST", "WEST", "NORTH", "SOUTH",
            "MOSCOW", "TEHRAN", "PYONGYANG", "DUBAI", "HONG", "KONG", "SHANGHAI", "BEIJING"}
+# Cyrillic and Greek transliteration for cross-list matching. The EU and UK publish some names only in
+# native script ("Сбербанк") while the US publishes the Latin form ("SBERBANK"); without this they never
+# meet. Ambiguous letters produce several variants and every variant becomes a match key.
+CYR = {"А":"A","Б":"B","В":"V","Г":"G","Д":"D","Е":"E","Ж":"ZH","З":"Z","И":"I","К":"K","Л":"L","М":"M",
+       "Н":"N","О":"O","П":"P","Р":"R","С":"S","Т":"T","У":"U","Ф":"F","Ц":"TS","Ч":"CH","Ш":"SH",
+       "Щ":"SHCH","Ъ":"","Ь":"","Ы":"Y","Э":"E","Є":"YE","І":"I","Ї":"YI","Ґ":"G","Ў":"U"}
+CYR_ALT = {"Й":["Y","I",""], "Х":["KH","H"], "Ё":["E","YO"], "Ю":["YU","IU"], "Я":["YA","IA"]}
+GREEK = {"Α":"A","Β":"V","Γ":"G","Δ":"D","Ε":"E","Ζ":"Z","Η":"I","Θ":"TH","Ι":"I","Κ":"K","Λ":"L","Μ":"M",
+         "Ν":"N","Ξ":"X","Ο":"O","Π":"P","Ρ":"R","Σ":"S","Σ":"S","Τ":"T","Υ":"Y","Φ":"F","Χ":"CH","Ψ":"PS","Ω":"O"}
+
+def translit(name, cap=4):
+    """Latin spellings of a native-script name. Returns [] when the name is already Latin."""
+    up = (name or "").upper()
+    if not any(c in CYR or c in CYR_ALT or c in GREEK for c in up): return []
+    out = [""]
+    for ch in up:
+        if ch in CYR_ALT:
+            opts = CYR_ALT[ch]
+            out = [o + v for o in out for v in opts][:cap * 4]
+        else:
+            out = [o + (CYR.get(ch) or GREEK.get(ch) or ch) for o in out]
+    seen, res = set(), []
+    for o in out:
+        if o not in seen: seen.add(o); res.append(o)
+    return res[:cap]
+
+COUNTRY_WORDS = {"RUSSIA", "RUSSIAN", "FEDERATION", "IRAN", "IRANIAN", "KOREA", "KOREAN", "CHINA", "CHINESE", "BELARUS", "UKRAINE", "SYRIA", "SYRIAN", "CUBA", "VENEZUELA", "LIBYA", "IRAQ", "IRAQI", "YEMEN", "SUDAN", "MYANMAR", "BURMA", "AFGHANISTAN", "PAKISTAN", "TURKEY", "TURKISH", "INDIA", "JAPAN", "AMERICA", "AMERICAN"}
+
 def match_key(name, typ):
     k = re.sub(r"[^A-Z0-9 ]", " ", norm(name).upper())
     toks = [t for t in k.split() if t]
     if typ != "Individual":
         toks = [t for t in toks if t not in LEGAL]
         if not toks or sum(len(t) for t in toks) < 6: return None
-        if len(toks) < 3 and not any(t not in GENERIC for t in toks): return None   # "BANK RUSSIA", "IRAN TRADING": too generic to identify anything
+        # "BANK RUSSIA" or "IRAN TRADING" identifies nothing, but "BANK MELLI" or "SME BANK" does:
+        # require one token the generic list does not cover, unless the name is long enough to stand alone.
+        if len(toks) < 4 and not any(t not in GENERIC for t in toks): return None
         return "E:" + " ".join(toks)
     toks = sorted(t for t in toks if len(t) > 1)
     if len(toks) < 2: return None
@@ -277,9 +307,39 @@ def merge_across_authorities(parties):
         if a != b: parent[max(a, b)] = min(a, b)
     index = {}
     for i, p in enumerate(parties):
+        names = [p["n"]] + p["alt"][:20]
         keys = {match_key(p["n"], p["t"])}
-        # aliases join the match only when specific enough (three or more tokens)
-        keys |= {k for k in (match_key(a, p["t"]) for a in p["alt"][:20]) if k and len(k.split()) >= 4}
+        for t in translit(p["n"]): keys.add(match_key(t, p["t"]))
+        # A country word at the end of a company name is often dropped by other authorities
+        # ("Sberbank of Russia" vs "Сбербанк"). Index the stripped form too. Entity keys keep word
+        # order, so this still cannot equate "Bank Melli Iran" with "Melli Bank".
+        if p["t"] != "Individual":
+            for base in [p["n"]] + translit(p["n"]):
+                k = match_key(base, p["t"])
+                if not k: continue
+                body = [t for t in k[2:].split() if t not in COUNTRY_WORDS]
+                if body and body != k[2:].split() and any(t not in GENERIC for t in body):
+                    keys.add("E:" + " ".join(body))
+        # Aliases are useful (an EU record in Cyrillic often carries the Latin spelling as an alias) but
+        # dangerous for companies: OFAC lists a parent's name as an aka of its subsidiary, so "MB Bank"
+        # carries "Bank Melli Iran". For entities an alias therefore only counts when it shares a
+        # distinctive word with the party's own name, which keeps spelling variants and drops relatives.
+        own = set()
+        if p["t"] != "Individual":
+            ok = match_key(p["n"], p["t"]) or ""
+            own = set(ok[2:].split()) - {""}
+        for a in p["alt"][:20]:
+            for cand in [a] + translit(a):
+                k = match_key(cand, p["t"])
+                if not k: continue
+                body = k[2:].split()
+                if not (len(body) >= 2 or (len(body) == 1 and len(body[0]) >= 7 and body[0] not in GENERIC)):
+                    continue
+                if p["t"] != "Individual":
+                    # the alias must carry the same distinctive words as the party's own name, not merely
+                    # overlap with them: "Melli Bank plc" and "Bank Melli Iran" are different companies.
+                    if own and own != set(body): continue
+                keys.add(k)
         for k in keys:
             if not k: continue
             for j in index.get(k, []):
