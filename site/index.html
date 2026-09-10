@@ -407,7 +407,7 @@ async function loadStyle(){
     const r=await fetch('https://tiles.openfreemap.org/styles/positron',{signal:AbortSignal.timeout(8000)});if(!r.ok)throw 0;const st=await r.json();
     st.projection={type:'globe'};
     // Land is a single pre-rendered image (always resident, no tiles); OpenFreeMap detail only appears from zoom 4
-    for(const l of st.layers){if(l.type!=='background'){l.minzoom=Math.max(l.minzoom||0,4);}}
+    for(const l of st.layers){if(l.type!=='background'){l.minzoom=Math.max(l.minzoom||0,2);}}
     const water=/water|ocean|sea|lake|river/i, bld=/building/i, green=/park|wood|forest|grass|landcover|landuse|glacier|scrub|farmland|cemetery|pitch|ice/i, boundary=/boundary|admin|border/i;
     for(const l of st.layers){
       l.paint=l.paint||{};
@@ -417,7 +417,7 @@ async function loadStyle(){
       if(l.type==='symbol'){l.paint['text-color']=water.test(l.id)?'#6f8ba8':'#5b6472';l.paint['text-halo-color']='rgba(255,255,255,0.6)';l.paint['text-halo-width']=0.9;l.paint['text-halo-blur']=0.6;continue;}
     }
     st.sources.landimg={type:'image',url:'vendor/land-physical-v2.png',coordinates:[[-180,85.0511],[180,85.0511],[180,-85.0511],[-180,-85.0511]]};
-    st.layers.splice(1,0,{id:'landimg',type:'raster',source:'landimg',paint:{'raster-opacity':1,'raster-fade-duration':0}});
+    st.layers.splice(1,0,{id:'landimg',type:'raster',source:'landimg',paint:{'raster-fade-duration':0,'raster-opacity':['interpolate',['linear'],['zoom'],2,1,3.6,0]}});
     return st;
   }catch(e){console.warn('basemap unavailable, drawing plain land',e);
     return {version:8,projection:{type:'globe'},glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',sources:{landimg:{type:'image',url:'vendor/land-physical-v2.png',coordinates:[[-180,85.0511],[180,85.0511],[180,-85.0511],[-180,-85.0511]]}},layers:[{id:'bg',type:'background',paint:{'background-color':'#ffffff'}},{id:'landimg',type:'raster',source:'landimg',paint:{'raster-fade-duration':0}}],metadata:{fallback:true}};}
