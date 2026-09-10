@@ -292,31 +292,37 @@ function linesGeoJSON(){
   return {type:'FeatureCollection',features:feats};
 }
 function shadeValue(iso){const m=document.getElementById('shadeMode').value;if(m==='parties')return countryCounts.get(iso)||0;const c=COUNTRY_STATS.get(iso);if(!c)return 0;return m==='programs'?c.progs.size:m==='changes'?c.ch:c.score;}
-function fillExpression(){
-  const choro=document.getElementById('choro').checked;if(!choro)return 'rgba(0,0,0,0)';
-  const m=document.getElementById('shadeMode').value;let max=0;const vals={};
-  for(const f of COUNTRIES.features){if(!f.iso)continue;const v=shadeValue(f.iso);vals[f.iso]=v;if(v>max)max=v;}
-  if(!max)return 'rgba(0,0,0,0)';
-  const entries=['match',['get','iso']];
+// The country shading is painted onto one canvas in Web Mercator and shown as a single texture,
+// so it never depends on tiles. Country hit-testing is done in JS with d3.geoContains.
+const CH=2048;let choroCanvas=null,choroPaths=null;
+function mercXY(lon,lat){const la=Math.max(-85.0511,Math.min(85.0511,lat));return [(lon+180)/360*CH,(1-Math.log(Math.tan(la*Math.PI/180)+1/Math.cos(la*Math.PI/180))/Math.PI)/2*CH];}
+function buildChoroPaths(){choroPaths=new Map();for(const f of COUNTRIES.features){if(!f.iso)continue;const path=new Path2D();for(const pg of f.geometry.coordinates){for(const ring of pg){ring.forEach((c,i)=>{const [x,y]=mercXY(c[0],c[1]);i?path.lineTo(x,y):path.moveTo(x,y);});path.closePath();}}
+  if(!choroPaths.has(f.iso))choroPaths.set(f.iso,[]);choroPaths.get(f.iso).push(path);}}
+function paintChoro(){
+  if(!choroCanvas){choroCanvas=document.createElement('canvas');choroCanvas.width=choroCanvas.height=CH;buildChoroPaths();}
+  const ctx=choroCanvas.getContext('2d');ctx.clearRect(0,0,CH,CH);
+  if(!document.getElementById('choro').checked)return;
+  const m=document.getElementById('shadeMode').value;let max=0;const vals=new Map();
+  for(const iso of choroPaths.keys()){const v=shadeValue(iso);vals.set(iso,v);if(v>max)max=v;}
+  if(!max)return;
   const ramp=m==='score'?(v)=>d3.interpolateRgb('rgba(233,180,76,0.05)','rgba(217,151,58,0.75)')(Math.pow(v/max,1.6)):m==='changes'?(v)=>d3.interpolateRgb('rgba(224,122,122,0.04)','rgba(224,122,122,0.6)')(Math.log1p(v)/Math.log1p(max)):(v)=>d3.interpolateRgb('rgba(233,180,76,0.02)','rgba(233,180,76,0.26)')(Math.log1p(v)/Math.log1p(max));
-  for(const [iso,v] of Object.entries(vals)){if(!v)continue;entries.push(iso,ramp(v));}
-  entries.push('rgba(0,0,0,0)');return entries.length>3?entries:'rgba(0,0,0,0)';
+  for(const [iso,v] of vals){if(!v)continue;ctx.fillStyle=ramp(v);for(const path of choroPaths.get(iso))ctx.fill(path,'evenodd');}
 }
+function countryAt(lngLat){const pt=[lngLat.lng,lngLat.lat];for(const f of COUNTRIES.features){if(f.iso&&COUNTRY_STATS.has(f.iso)&&d3.geoContains(f,pt))return f.iso;}return null;}
 function pushData(){if(!styleReady)return;clearTimeout(pushTimer);pushTimer=setTimeout(pushDataNow,30);}
 function pushDataNow(){
   linesShown=!!selected||map.getZoom()>=3;
   map.getSource('pts').setData(pointsGeoJSON());
   map.getSource('lines').setData(linesGeoJSON());
-  map.setPaintProperty('countries-fill','fill-color',fillExpression());
+  paintChoro();const cs=map.getSource('choro');if(cs){cs.play();requestAnimationFrame(()=>cs.pause());}
   const choroOnly=MODE==='score';
   for(const l of ['clusters','cluster-count','points','points-ring','lines','lines-other'])map.setLayoutProperty(l,'visibility',choroOnly?'none':'visible');
-  map.setPaintProperty('countries-line','line-opacity',choroOnly?0.6:0.25);
 }
 function addLayers(){
   const firstSymbol=(map.getStyle().layers.find(l=>l.type==='symbol')||{}).id;
-  map.addSource('countries',{type:'geojson',data:COUNTRIES});
-  map.addLayer({id:'countries-fill',type:'fill',source:'countries',paint:{'fill-color':'rgba(0,0,0,0)','fill-opacity':1}},firstSymbol);
-  map.addLayer({id:'countries-line',type:'line',source:'countries',paint:{'line-color':'#e9b44c','line-width':0.5,'line-opacity':0.12}},firstSymbol);
+  paintChoro();
+  map.addSource('choro',{type:'canvas',canvas:choroCanvas,animate:false,coordinates:[[-180,85.0511],[180,85.0511],[180,-85.0511],[-180,-85.0511]]});
+  map.addLayer({id:'choro',type:'raster',source:'choro',paint:{'raster-fade-duration':0}},firstSymbol);
   map.addSource('lines',{type:'geojson',data:{type:'FeatureCollection',features:[]},maxzoom:10,buffer:0,tolerance:1.5});
   map.addLayer({id:'lines',type:'line',source:'lines',layout:{'line-cap':'round'},filter:['==',['get','k'],'link'],paint:{
     'line-color':['match',['get','k'],'link','#f0d9a6','foot','#5fb8c4','#b18fd9'],
@@ -349,11 +355,11 @@ function addLayers(){
   map.on('zoomend',()=>{const z=map.getZoom();if((z>=3)!==linesShown&&!selected){linesShown=z>=3;map.getSource('lines').setData(linesGeoJSON());}});
   map.on('click','clusters',e=>{const f=e.features[0];map.getSource('pts').getClusterExpansionZoom(f.properties.cluster_id).then(z=>map.easeTo({center:f.geometry.coordinates,zoom:Math.min(14,Math.max(z,map.getZoom()+2.2)),duration:700}));});
   map.on('click','points',e=>{const p=BYID.get(e.features[0].properties.id);if(p)select(p,false);});
-  map.on('click',e=>{const hit=map.queryRenderedFeatures(e.point,{layers:['points','clusters']});if(hit.length)return;const c=map.queryRenderedFeatures(e.point,{layers:['countries-fill']});if(c.length&&c[0].properties.iso&&(MODE==='score'||map.getZoom()<3)&&COUNTRY_STATS.has(c[0].properties.iso)){openCountry(c[0].properties.iso);return;}if(selected){selected=null;closeDrawer();pushData();writeURL();}});
+  map.on('click',e=>{const hit=map.queryRenderedFeatures(e.point,{layers:['points','clusters']});if(hit.length)return;const iso=(MODE==='score'||map.getZoom()<3)?countryAt(e.lngLat):null;if(iso){openCountry(iso);return;}if(selected){selected=null;closeDrawer();pushData();writeURL();}});
   for(const l of ['clusters','points']){map.on('mouseenter',l,()=>map.getCanvas().style.cursor='pointer');map.on('mouseleave',l,()=>{map.getCanvas().style.cursor='';popup.remove();});}
   map.on('mousemove','points',e=>{const p=BYID.get(e.features[0].properties.id);if(!p)return;popup.setLngLat(e.features[0].geometry.coordinates).setHTML(`<b>${esc(p.n)}</b><br><span style="color:#a8a294">${esc(p.type)} · ${esc(p.city||nameByISO[p.cc]||'')}${p.inf?' (inferred)':''} · ${esc(p.au.join(', '))}${p.edges.length?' · '+p.edges.length+' line'+(p.edges.length>1?'s':''):''}</span>`).addTo(map);});
   map.on('mousemove','clusters',e=>{const f=e.features[0];popup.setLngLat(f.geometry.coordinates).setHTML(`<b>${f.properties.point_count.toLocaleString()} parties</b><br><span style="color:#a8a294">click to open</span>`).addTo(map);});
-  map.on('mousemove',e=>{if(MODE!=='score')return;const c=map.queryRenderedFeatures(e.point,{layers:['countries-fill']});const iso=c.length&&c[0].properties.iso;const s=iso&&COUNTRY_STATS.get(iso);map.getCanvas().style.cursor=s?'pointer':'';if(s){popup.setLngLat(e.lngLat).setHTML(`<b>${esc(nameByISO[iso])}</b><br><span style="color:#a8a294">intensity ${s.score} · ${s.n.toLocaleString()} parties · ${s.progs.size} programs · click for details</span>`).addTo(map);}else popup.remove();});
+  let hoverT=0;map.on('mousemove',e=>{if(MODE!=='score')return;if(map.queryRenderedFeatures(e.point,{layers:['points','clusters']}).length)return;const iso=countryAt(e.lngLat);const s=iso&&COUNTRY_STATS.get(iso);map.getCanvas().style.cursor=s?'pointer':'';if(s){popup.setLngLat(e.lngLat).setHTML(`<b>${esc(nameByISO[iso])}</b><br><span style="color:#a8a294">intensity ${s.score} · ${s.n.toLocaleString()} parties · ${s.progs.size} programs · click for details</span>`).addTo(map);}else popup.remove();});
 }
 async function loadStyle(){
   // Basemap: OpenFreeMap (free, no key, commercial use allowed), recoloured to the site's dark palette.
@@ -383,7 +389,7 @@ function addCountryLabels(){
   const feats=[];for(const [iso,base] of centroidByISO){const n=nameByISO[iso];if(!n||!COUNTRY_STATS.has(iso))continue;feats.push({type:'Feature',geometry:{type:'Point',coordinates:base},properties:{n:n.toUpperCase(),big:COUNTRY_STATS.get(iso).n>300?1:0}});}
   map.addSource('clabels',{type:'geojson',data:{type:'FeatureCollection',features:feats}});
   const font=(map.getStyle().glyphs||'').includes('openfreemap')?['Noto Sans Regular']:['Open Sans Semibold'];
-  map.addLayer({id:'clabels',type:'symbol',source:'clabels',maxzoom:4.5,layout:{'text-field':['get','n'],'text-font':font,'text-size':['interpolate',['linear'],['zoom'],1,8,4,12],'text-letter-spacing':0.12,'text-allow-overlap':false},paint:{'text-color':'#7f8aa0','text-halo-color':'#0b1321','text-halo-width':1}},'countries-fill');
+  map.addLayer({id:'clabels',type:'symbol',source:'clabels',maxzoom:4.5,layout:{'text-field':['get','n'],'text-font':font,'text-size':['interpolate',['linear'],['zoom'],1,8,4,12],'text-letter-spacing':0.12,'text-allow-overlap':false},paint:{'text-color':'#7f8aa0','text-halo-color':'#0b1321','text-halo-width':1}},'lines');
 }
 
 // ============================================================ live AIS
