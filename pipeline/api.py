@@ -20,7 +20,7 @@ Dynamic (functions/):
   /api/v1/search?q=                 name / alias search
   /api/v1/screen  (POST)            fuzzy screening of a list of names
 """
-import html, json, os, hashlib, datetime as dt
+import html, json, os, re, hashlib, datetime as dt
 from collections import defaultdict
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -93,6 +93,60 @@ def build_api(site_url):
     dump(os.path.join(API, "changes.json"), changes)
     dump(os.path.join(API, "index.json"), [{"id": p["id"], "n": p["n"], "alt": p.get("alt", [])[:12], "t": p["t"], "cc": p.get("cc"), "au": p["au"], "p": p.get("p", []), "city": p.get("city"), "pg": p.get("pg")} for p in parties])
 
+    # ---- search shards: a prefix-sharded inverted index so the query worker parses a few KB
+    # instead of rebuilding a 40k-entity token index on every cold start (which blows the CPU limit).
+    import unicodedata
+    LEGAL = set("LLC LTD LIMITED INC CORP CORPORATION CO COMPANY GMBH AG SA SAS SARL BV NV PLC PJSC JSC OJSC CJSC OAO ZAO OOO AO PAO LLP LP SRL SPA PTE PTY PVT FZE FZCO THE OF AND PUBLIC JOINT STOCK OPEN CLOSED".split())
+    def _norm(x):
+        x = unicodedata.normalize("NFKD", x or "")
+        x = "".join(c for c in x if not unicodedata.combining(c)).upper()
+        return re.sub(r"\s+", " ", re.sub(r"[^A-Z0-9 ]+", " ", x)).strip()
+    def _toks(x): return [t for t in _norm(x).split(" ") if t and t not in LEGAL and len(t) > 1]
+    MAX_POSTING = 1200          # very common tokens are not selective; cap them to bound shard size
+    tok2p = defaultdict(list)
+    for i, p in enumerate(parties):
+        seen = set()
+        for name in [p["n"]] + (p.get("alt") or [])[:6]:
+            for t in _toks(name):
+                if t not in seen:
+                    seen.add(t)
+                    if len(tok2p[t]) < MAX_POSTING: tok2p[t].append(i)
+    def _mini(i):
+        q = parties[i]
+        return [q["id"], q["n"], q.get("t"), q.get("cc"), q.get("au") or [], q.get("p") or [], (q.get("alt") or [])[:6]]
+    def _blob(ts):
+        recs, out = {}, {}
+        for t in ts:
+            for i in tok2p[t]:
+                if i not in recs: recs[i] = _mini(i)
+            out[t] = tok2p[t]
+        return {"r": recs, "t": out}
+    TARGET = 40 * 1024
+    def _split(pre, ts, depth):
+        body = _blob(ts)
+        if len(json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode()) <= TARGET or depth >= 5 or len(ts) == 1:
+            return {pre: ts}
+        sub = defaultdict(list)
+        for t in ts: sub[t[:depth + 1] if len(t) >= depth + 1 else t].append(t)
+        if len(sub) == 1: return {pre: ts}
+        out = {}
+        for k, v in sub.items(): out.update(_split(k, v, depth + 1))
+        return out
+    buckets = defaultdict(list)
+    for t in tok2p: buckets[t[:2] if len(t) >= 2 else t].append(t)
+    plan = {}
+    for pre, ts in buckets.items(): plan.update(_split(pre, ts, 2))
+    # a token has to resolve to exactly one shard name: record the prefix lengths in use
+    prefix_lens = sorted({len(k) for k in plan}, reverse=True)
+    for name, ts in plan.items():
+        dump(os.path.join(API, "search", name.lower() + ".json"), _blob(ts))
+    # document frequency for common tokens only, so the worker can pick the most selective token in a
+    # query and avoid pulling the huge "BANK" / "LIMITED" style shards when a rarer one is available.
+    df = {t: len(v) for t, v in tok2p.items() if len(v) >= 60}
+    dump(os.path.join(API, "search", "_meta.json"), {"prefix_lens": prefix_lens, "shards": sorted(plan), "tokens": len(tok2p),
+         "max_posting": MAX_POSTING, "legal": sorted(LEGAL), "df": df})
+    n_shards_search = len(plan)
+
     # shards
     shards = defaultdict(dict)
     for p in parties: shards[shard_of(p["id"])][p["id"]] = p
@@ -159,10 +213,10 @@ def build_api(site_url):
 <h2 id="pricing">Plans</h2>
 <div class="cards">
 <div class="card"><div class="tag">Free</div><h3>Open access</h3><div class="price">$0<small> · no key</small></div>
-<ul><li>Every static file: full dataset, programs, countries, changes, RSS</li><li>Search: 20 results per request</li><li>Screen: 100 names per request</li><li>Standard fuzzy-match depth</li><li>In-browser screener with no limit</li><li>Personal and research use</li></ul>
+<ul><li>Every static file: full dataset, programs, countries, changes, RSS</li><li>Search: 20 results per request</li><li>Screen: 50 names per request</li><li>Standard fuzzy-match depth</li><li>In-browser screener with no limit</li><li>Personal and research use</li></ul>
 <a class="btn" href="#quickstart">Start with the docs</a></div>
 <div class="card pro"><div class="tag">Pro</div><h3>For teams and products</h3><div class="price">$19.99<small> / month, cancel any time</small></div>
-<ul><li>Everything in Free</li><li>Search: 100 results per request</li><li>Screen: 500 names per request</li><li>Deep fuzzy-match candidate search</li><li>Commercial use</li><li>Email support</li></ul>
+<ul><li>Everything in Free</li><li>Search: 100 results per request</li><li>Screen: 200 names per request</li><li>Deep fuzzy-match candidate search</li><li>Commercial use</li><li>Email support</li></ul>
 <a class="btn warm" href="{site_url}api/subscribe">Subscribe</a> <a class="btn" href="{site_url}api/portal">Manage subscription</a></div>
 </div>
 <p class="meta">Pro keys are issued on the page you land on after checkout, and can be re-shown by reopening that link. Send the key as an <code>x-api-key</code> header or <code>?key=</code> parameter. <code>GET me</code> confirms the tier. Keys deactivate automatically when a subscription ends. Tax is calculated at checkout.</p>
@@ -178,7 +232,9 @@ curl "{ex}party/ofa:31695"
 # screen a list of names (Pro key optional; raises the limit to 500)
 curl -X POST "{ex}screen" -H "content-type: application/json" \\
   -H "x-api-key: YOUR_KEY" \\
-  -d '{{"names":["Sberbank of Russia","John Smith"],"threshold":0.85}}'</code></pre>
+  -d '{{"names":["Sberbank of Russia","John Smith"],"threshold":0.85}}'
+
+# rate limit: 429 with a retry-after header if you go too fast; send the key as a header, not ?key=</code></pre>
 <pre><code>import requests
 BASE = "{ex}"
 hits = requests.get(BASE + "search", params={{"q": "sberbank"}}).json()["results"]
@@ -199,7 +255,7 @@ const scr  = await (await fetch(BASE + "screen", {{
 <table><tr><th>Endpoint</th><th>What it does</th></tr>
 <tr><td><code>GET search?q=&lt;text&gt;&amp;limit=20</code></td><td>Name and alias search across all lists. Diacritic-insensitive, token-based, scored 0 to 1.</td></tr>
 <tr><td><code>GET party/&lt;id&gt;</code></td><td>One merged party. Ids look like <code>ofa:12345</code>, <code>eu:EU-123</code>, <code>uk:UK-RUS0001</code>.</td></tr>
-<tr><td><code>POST screen</code></td><td>Body <code>{{"names": [...], "threshold": 0.85}}</code>. Returns up to five scored matches per name. Names are processed in memory and not stored.</td></tr>
+<tr><td><code>POST screen</code></td><td>Body <code>{{"names": [...], "threshold": 0.85}}</code>. Returns up to five scored matches per name. Names are processed in memory and not stored. For large lists use the <a href="{site_url}screen.html">in-browser screener</a>, which runs on your own machine and has no limit.</td></tr>
 <tr><td><code>GET me</code></td><td>Tier and limits for the supplied key.</td></tr></table>
 
 <h2>Static files</h2>
@@ -234,7 +290,7 @@ const scr  = await (await fetch(BASE + "screen", {{
     doc = theme.shell("API", f"Free JSON API for the merged US, EU, UK, UN, Australian and Canadian sanctions lists: {meta['parties']:,} geocoded parties with cross-list relationships. Pro tier for higher limits.", body, site_url, site_url + "api/", on="API", built=meta["date"], narrow=False)
     os.makedirs(os.path.join(SITE, "api"), exist_ok=True)
     with open(os.path.join(SITE, "api", "index.html"), "w", encoding="utf-8") as f: f.write(doc)
-    return len(parties), len(shards)
+    return len(parties), len(shards), n_shards_search
 
 if __name__ == "__main__":
     import sys

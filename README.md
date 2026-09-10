@@ -120,6 +120,62 @@ Keys are optional; everything works without one at free limits. To sell the Pro 
 
 Limits per tier are in `functions/api/v1/_lib.js` (`LIMITS`). Pricing is whatever you set in Stripe.
 
+## Live vessel positions (AIS)
+
+`collector/ais_collect.py` runs every 15 minutes in GitHub Actions (`.github/workflows/ais.yml`),
+listens to the aisstream.io feed for two minutes, keeps positions for vessels on the sanctioned
+roster (`site/data/vessels.json`, every vessel with a published IMO or MMSI), and writes them to
+the same Cloudflare KV namespace the API keys use. The map's "Live vessels" toggle and the
+`/vessels/` page read them through `/api/v1/vessels`. OFAC and the UK publish IMO numbers but AIS
+is keyed by MMSI, so the collector learns the IMO-to-MMSI mapping from ship static-data messages
+over its first days; coverage grows with time.
+
+Setup:
+1. aisstream.io → sign in with GitHub → API keys → create one.
+2. Cloudflare → My Profile → API Tokens → Create token → "Edit Cloudflare Workers" template is
+   more than enough; or custom with permission Account · Workers KV Storage · Edit. Copy the token.
+3. Account ID: Cloudflare dashboard, right column of any domain overview. KV namespace ID:
+   Storage & databases → KV → `sanctionscope-keys` → the ID shown next to it.
+4. GitHub repo → Settings → Secrets and variables → Actions → Secrets: `AISSTREAM_KEY`,
+   `CF_API_TOKEN`, `CF_ACCOUNT_ID`, `CF_KV_NAMESPACE_ID`.
+5. Actions → "AIS positions for sanctioned vessels" → Run workflow once; then it runs itself.
+
+aisstream.io is free for non-commercial use. The vessel layer is therefore on the free site only
+and is not part of the paid API tier. Sanctioned vessels frequently disable or spoof AIS; the site
+says so wherever positions are shown.
+
+## Protecting the free-tier quotas
+
+Pages Functions (everything under `functions/`) count against the Workers free plan: **100,000
+requests a day**, and **10 ms of CPU per request**. Static files are unmetered, so the map and all
+the JSON under `site/` are free no matter the traffic; only the query endpoints cost quota.
+
+Two things follow from that, and both are already done in the code:
+
+* **The search index is precomputed.** `pipeline/api.py` writes a prefix-sharded inverted index to
+  `site/api/v1/search/`. A query parses a few KB instead of rebuilding a token index over 37k
+  parties on every cold start, which measured 420 ms of CPU against a 10 ms budget.
+* **No `_middleware.js` under `/api/v1/`.** Pages middleware intercepts static assets on the same
+  path, which would turn every index shard fetch into a billed Function call. CORS for the static
+  files comes from `site/_headers`; the dynamic routes set their own.
+
+What still needs doing in the dashboard, once:
+
+1. Cloudflare → your domain → Security → WAF → **Rate limiting rules** → Create rule.
+   Name `api`, expression `(http.request.uri.path contains "/api/v1/")`,
+   characteristic *IP*, **60 requests per 1 minute**, action **Block** for 1 minute.
+   The free plan includes exactly one of these rules, and this is the one worth spending it on.
+2. Security → Bots → leave **Bot Fight Mode** on, and check Security → Events occasionally to make
+   sure Googlebot is not being challenged.
+
+If the API ever earns a paying customer, move to **Workers Paid ($5/month)**: it removes the daily
+request cap and raises CPU from 10 ms to 30 s, which is what large screening batches actually need.
+One subscriber covers it four times over.
+
+## Legal pages
+
+`terms.html`, `privacy.html` and `about.html` are generated nightly by `pipeline/pages.py` (edit the text there). They are linked from the footer of every page. Governing law is set to Florida; change it in pages.py if that's wrong for you. The contact address used throughout is hello@sanctionscope.com; set up Cloudflare Email Routing so it forwards to your inbox.
+
 ## Static pages and search engines
 
 `pipeline/pages.py` runs after every build and writes plain HTML pages for every program
@@ -128,6 +184,15 @@ more "Linked To" relationships (`/parties/<slug>.html`), plus `sitemap.xml` and 
 The workflow sets the base URL from the repo name; once you have a custom domain, add a
 repository variable `SITE_URL` (Settings → Secrets and variables → Actions → Variables) with
 the full URL, e.g. `https://sanctionscope.com/`, and submit `sitemap.xml` in Google Search Console.
+
+## Map
+
+The map is MapLibre GL (GPU-rendered) on an OpenFreeMap basemap (free, no key, commercial use
+allowed; OpenStreetMap data) recoloured to the site palette at load time. CARTO's basemaps now
+require an API key, so don't switch back to them without one. Points are clustered by the engine; lines are great circles; the
+choropleth is our own country layer. The map loads a compact 7 MB dataset (`data/map-*.json`)
+and fetches full records on click from the API shards, so the 30 MB full dataset is never sent
+to the browser. If the basemap tiles can't be reached the map falls back to plain country polygons.
 
 ## Map features
 
@@ -149,10 +214,11 @@ State lives in the hash: `#p=<party id>`, `#prog=RUSSIA-EO14024,IRAN`, `#src=OFA
 pipeline/build.py     the whole data pipeline
 pipeline/pages.py     static program, country and party pages, sitemap
 pipeline/api.py       static API files and docs
-functions/            Cloudflare Pages Functions: search, screen, party lookup, key check, Stripe activation and webhook
+functions/            Cloudflare Pages Functions: search, screen, party lookup, vessels, key check, Stripe activation and webhook
+collector/            AIS collector (GitHub Actions cron)
 pipeline/og.py        optional: renders og.png for link previews
 site/index.html       the site
-site/vendor/          d3, topojson, world map (vendored, works offline)
+site/vendor/          d3, topojson, MapLibre GL, world map (vendored)
 site/data/            generated nightly; state.json is the diff memory, don't delete it
 ```
 
