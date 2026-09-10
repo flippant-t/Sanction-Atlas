@@ -1,0 +1,690 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SanctionScope</title>
+<meta name="description" content="Every party on the US, EU, UK, UN, Australian and Canadian sanctions and export-control lists, on one map, updated nightly, with the links between them and which authorities agree.">
+<meta property="og:title" content="SanctionScope">
+<meta property="og:description" content="Sanctions lists from six authorities on one map, updated nightly, with links between parties and cross-list comparison.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%230e1726'/><circle cx='16' cy='16' r='5' fill='%23e9b44c'/></svg>">
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
+<script src="vendor/d3.min.js"></script>
+<script src="vendor/topojson-client.min.js"></script>
+<style>
+  :root{--bg:#0e1726;--bg-2:#121c2c;--bg-3:#0b1321;--ink:#eae6db;--ink-2:#a8a294;--ink-3:#6f6a5e;--line:#26344a;--line-2:#31435d;--accent:#e9b44c;--accent-2:#f3cf82;--good:#7fd1a0;--bad:#e07a7a;--blue:#6f9bdc}
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+  button,input,select,label{font:inherit}
+  a{color:var(--accent)}
+  #topnav{height:52px;display:flex;align-items:center;gap:20px;padding:0 18px;border-bottom:1px solid var(--line);background:var(--bg-2);font-size:14px}
+  #topnav a{color:var(--ink-2);text-decoration:none}#topnav a:hover,#topnav a.on{color:var(--ink)}
+  #topnav .brand{color:var(--ink);font-size:18px;margin-right:4px}#topnav .brand b{color:var(--accent);font-weight:400}
+  #topnav .grow{flex:1}#navstamp{color:var(--ink-3);font-size:12px}
+  #topnav .cta{background:var(--accent);color:#1a1408;padding:6px 12px;border-radius:6px;font-weight:500}#topnav .cta:hover{background:var(--accent-2);color:#1a1408}
+  #topnav .railbtn{display:none}
+  #app{display:grid;grid-template-columns:320px 1fr;height:calc(100vh - 52px);overflow:hidden}
+  #app.collapsed{grid-template-columns:0 1fr}
+  #rail{background:var(--bg-2);border-right:1px solid var(--line);display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden}
+  #rail::-webkit-scrollbar{width:8px}#rail::-webkit-scrollbar-thumb{background:#2a3a52;border-radius:4px}
+  .sec{padding:14px 18px;border-top:1px solid var(--line)}.sec:first-child{border-top:0}
+  .sec h2{font-size:12px;font-weight:600;letter-spacing:.06em;color:var(--ink-2);margin:0 0 8px;display:flex;align-items:baseline}
+  .sec h2 .more{margin-left:auto;font-weight:400;letter-spacing:0;cursor:pointer;color:var(--ink-3)}.sec h2 .more:hover{color:var(--ink)}
+  .stamp{font-size:12px;color:var(--ink-2);line-height:1.5}.stamp b{color:var(--ink);font-weight:500}.plus{color:var(--good)}.minus{color:var(--bad)}
+  .search{width:100%;background:var(--bg-3);border:1px solid var(--line);color:var(--ink);padding:9px 11px;border-radius:6px;outline:none}
+  .search:focus{border-color:var(--accent)}
+  .hits{margin:6px 0 0;padding:0;list-style:none;max-height:220px;overflow:auto;font-size:13px}
+  .hits li{padding:6px 8px;border-radius:4px;cursor:pointer;display:flex;gap:8px;align-items:baseline}
+  .hits li:hover,.hits li:focus{background:#1a2740;outline:none}.hits .cty{color:var(--ink-3);font-size:11px;margin-left:auto;white-space:nowrap}
+  .hits li.kind{color:var(--ink-3);font-size:11px;letter-spacing:.06em;cursor:default;padding-top:8px}
+  .chk{display:flex;align-items:center;gap:8px;padding:3px 0;cursor:pointer;font-size:13px}
+  .chk input{accent-color:var(--accent);margin:0}.chk .sw{width:10px;height:10px;border-radius:50%;flex:none}.chk .n{margin-left:auto;color:var(--ink-3);font-size:11px;font-variant-numeric:tabular-nums}
+  .modes{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .modes label{display:block;padding:8px 10px;border:1px solid var(--line);border-radius:6px;cursor:pointer;font-size:13px}
+  .modes label:has(input:checked){border-color:var(--accent);background:#182538}.modes input{display:none}.modes small{display:block;color:var(--ink-3);font-size:11px}
+  .progs{max-height:220px;overflow:auto;margin-right:-6px;padding-right:6px}
+  .row{display:flex;gap:8px;align-items:center}
+  .btn{background:#182538;border:1px solid var(--line-2);color:var(--ink);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:13px;text-decoration:none;display:inline-block}
+  .btn:hover{border-color:var(--accent)}.btn.warm{background:var(--accent);color:#1a1408;border-color:var(--accent);font-weight:500}
+  .muted{color:var(--ink-3);font-size:12px}
+  .line-sw{width:26px;height:0;border-top:2px solid;flex:none}.line-sw.dash{border-top-style:dashed}.line-sw.dot{border-top-style:dotted}
+  .stories button{display:block;width:100%;text-align:left;background:var(--bg-3);border:1px solid var(--line);color:var(--ink);padding:8px 10px;border-radius:6px;cursor:pointer;margin-bottom:5px;font-size:13px}
+  .stories button:hover{border-color:var(--accent)}.stories button small{display:block;color:var(--ink-3);font-size:11px}
+  .feed{list-style:none;margin:0;padding:0;font-size:13px}.feed li{display:grid;grid-template-columns:14px 1fr;gap:8px;padding:5px 0;border-top:1px solid var(--line);cursor:pointer}
+  .feed li:first-child{border-top:0}.feed li:hover .nm{color:var(--accent)}.feed .op{font-weight:600}.feed .op.plus{color:var(--good)}.feed .op.minus{color:var(--bad)}
+  .feed .meta{color:var(--ink-3);font-size:11px}.feed li.d{display:block;color:var(--ink-2);font-size:11px;padding:8px 0 2px;cursor:default;border-top:0}
+  .spark{width:100%;height:36px;display:block;margin:2px 0 6px}
+  #adv>summary::-webkit-details-marker{display:none}#adv>summary{cursor:pointer;list-style:none}#adv[open]>summary .more::after{content:' (hide)'}
+  input[type=range]{accent-color:var(--accent)}
+  #stage{position:relative;overflow:hidden}
+  #map{position:absolute;inset:0}
+  .maplibregl-ctrl-attrib{background:rgba(14,23,38,.7)!important;color:var(--ink-3)!important;font-size:10px}.maplibregl-ctrl-attrib a{color:var(--ink-2)!important}
+  .maplibregl-ctrl-group{background:var(--bg-2)!important;border:1px solid var(--line)}.maplibregl-ctrl-group button{filter:invert(.85)}
+  .maplibregl-popup-content{background:#0b1220ee;color:var(--ink);border:1px solid #2f4159;border-radius:6px;padding:7px 10px;font:12px "Iowan Old Style",Palatino,Georgia,serif;box-shadow:none;max-width:280px}
+  .maplibregl-popup-tip{border-top-color:#2f4159!important}
+  #drawer{position:absolute;top:0;right:0;bottom:0;width:400px;max-width:100%;background:rgba(16,26,42,.86);backdrop-filter:blur(12px);border-left:1px solid var(--line);transform:translateX(100%);transition:transform .2s ease;overflow-y:auto;padding:18px 20px 30px;z-index:4}
+  @media (prefers-reduced-motion:reduce){#drawer{transition:none}}
+  #drawer.open{transform:none}
+  #drawer h3{font-size:19px;font-weight:400;margin:0 30px 2px 0;line-height:1.2}
+  #drawer .kind{color:var(--ink-2);font-size:12px;margin-bottom:10px}#drawer .kind i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+  #drawer .tools{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+  #drawer h4{font-size:12px;font-weight:600;letter-spacing:.06em;color:var(--ink-2);margin:16px 0 6px}
+  #drawer dl{margin:0;display:grid;grid-template-columns:96px 1fr;gap:6px 10px;font-size:13px}#drawer dt{color:var(--ink-3)}#drawer dd{margin:0;word-break:break-word}#drawer dd.small{font-size:12px;color:var(--ink-2)}
+  #drawer .close{position:absolute;top:10px;right:12px;background:none;border:0;color:var(--ink-2);font-size:20px;cursor:pointer;line-height:1}#drawer .close:hover{color:var(--ink)}
+  #drawer .links{list-style:none;padding:0;margin:4px 0 0}#drawer .links li{padding:4px 0;border-top:1px solid var(--line);cursor:pointer;font-size:13px}#drawer .links li:hover{color:var(--accent)}#drawer .links li span{color:var(--ink-3);font-size:11px;margin-left:6px}
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0 10px}.stats div{background:var(--bg-3);border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:12px;color:var(--ink-2)}.stats b{display:block;font-size:20px;font-weight:400;color:var(--ink)}
+  .bar{display:grid;grid-template-columns:150px 1fr 44px;align-items:center;gap:8px;font-size:12px;padding:2px 0}.bar .bl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.bar i{display:block;height:7px;background:var(--accent);border-radius:2px;opacity:.7}.bar .bn{text-align:right;color:var(--ink-3);font-variant-numeric:tabular-nums}
+  .chip{display:inline-block;border:1px solid;border-radius:10px;padding:0 7px;font-size:11px;margin:0 2px 2px 0}
+  #net{width:100%;height:240px;display:block;background:var(--bg-3);border:1px solid var(--line);border-radius:6px;margin:8px 0 12px}#net text{font-size:10px;fill:var(--ink-2);pointer-events:none}#net circle{cursor:pointer}
+  #legend{position:absolute;left:14px;bottom:26px;font-size:12px;color:var(--ink-2);display:flex;gap:14px;flex-wrap:wrap;pointer-events:none;background:rgba(14,23,38,.6);padding:6px 10px;border-radius:6px;max-width:70%}
+  #legend span{display:inline-flex;align-items:center;gap:6px}#legend i{width:9px;height:9px;border-radius:50%;display:inline-block}
+  #modebar{position:absolute;top:14px;left:50%;transform:translateX(-50%);display:flex;background:rgba(14,23,38,.85);border:1px solid var(--line);border-radius:8px;padding:3px;z-index:3;backdrop-filter:blur(6px)}
+  #modebar button{background:none;border:0;color:var(--ink-2);padding:6px 12px;border-radius:6px;cursor:pointer;font:inherit;font-size:13px}#modebar button.on{background:#182538;color:var(--ink)}#modebar .sep{width:1px;background:var(--line);margin:4px 4px}
+  #hint{position:absolute;left:50%;top:60px;transform:translateX(-50%);background:rgba(11,18,32,.88);border:1px solid var(--line);padding:6px 8px 6px 12px;border-radius:6px;font-size:12px;color:var(--ink-2);display:flex;gap:10px;align-items:center;z-index:3;max-width:calc(100% - 120px)}
+  #hint button{background:none;border:0;color:var(--ink-2);font-size:16px;cursor:pointer;padding:0 2px}
+  #loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--ink-2);background:var(--bg);z-index:9}
+  #toast{position:absolute;left:50%;bottom:64px;transform:translateX(-50%);background:#182538;border:1px solid var(--line);padding:6px 12px;border-radius:6px;font-size:12px;display:none;z-index:6}
+  #story{position:absolute;left:50%;bottom:64px;transform:translateX(-50%);width:min(560px,calc(100% - 40px));background:rgba(11,18,32,.93);border:1px solid var(--line-2);border-radius:8px;padding:14px 16px;z-index:6;display:none}
+  #story h5{margin:0 0 4px;font-size:16px;font-weight:400}#story p{margin:0 0 10px;color:var(--ink-2);font-size:13px}#story .row{justify-content:space-between}#story .step{color:var(--ink-3);font-size:12px}
+  #railToggle{display:none;position:absolute;left:14px;top:14px;z-index:7}
+  @media (max-width:760px){
+    #app{grid-template-columns:1fr}
+    #rail{position:absolute;left:0;right:0;bottom:0;top:auto;max-height:72vh;border-right:0;border-top:1px solid var(--line);transform:translateY(100%);transition:transform .2s;z-index:8}
+    #rail.open{transform:none}#railToggle{display:block;top:auto;bottom:14px}#legend{display:none}#drawer{width:100%}
+    #topnav{height:auto;flex-wrap:wrap;gap:8px 14px;padding:8px 12px}#navstamp{display:none}#topnav .brand{width:100%}#app{height:auto;min-height:calc(100vh - 90px)}#stage{height:calc(100vh - 90px)}
+    #modebar{top:10px;font-size:12px}#hint{top:56px}
+  }
+  @media (min-width:761px){#topnav .railbtn{display:inline;color:var(--ink-3);font-size:12px;cursor:pointer;border:1px solid var(--line);padding:3px 8px;border-radius:5px}}
+</style>
+</head>
+<body>
+<nav id="topnav"><a class="brand" href="./">Sanction<b>Scope</b></a><a href="./" class="on">Map</a><a href="screen.html">Screen a list</a><a href="programs/">Programs</a><a href="countries/">Countries</a><a href="parties/">Parties</a><a href="vessels/">Vessels</a><a href="api/">API</a><a href="about.html">About</a><span class="grow"></span><span id="navstamp"></span><span class="railbtn" id="railCollapse" title="Hide or show the side panel">Panel</span><a class="cta" href="api/subscribe">API Pro</a></nav>
+<div id="app">
+  <aside id="rail">
+    <div class="sec">
+      <input class="search" id="q" placeholder="Search parties, countries, programs  (press / )" autocomplete="off">
+      <ul class="hits" id="hits"></ul>
+      <div class="stamp" id="stamp" style="margin-top:10px">Loading…</div>
+    </div>
+
+    <div class="sec">
+      <h2>Map mode</h2>
+      <div class="modes" id="modes">
+        <label><input type="radio" name="mode" value="parties" checked>Parties<small>coloured by list</small></label>
+        <label><input type="radio" name="mode" value="score">Intensity<small>composite index</small></label>
+        <label><input type="radio" name="mode" value="changes">Activity<small>recent additions</small></label>
+        <label><input type="radio" name="mode" value="compare">Authorities<small>where lists agree</small></label>
+      </div>
+      <div class="muted" id="showing" style="margin-top:8px"></div>
+      <div id="modeOpts">
+        <select id="cmp" class="search" style="padding:5px 8px;font-size:12px;margin-top:6px;display:none"><option value="">Compare two authorities…</option></select>
+        <div class="muted" id="cmpNote" style="margin-top:6px;display:none"></div>
+        <div class="row" id="chgOpts" style="margin-top:6px;display:none"><span class="muted">Added in the last</span><select id="chgWin" class="search" style="width:auto;padding:3px 6px;font-size:12px"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option></select></div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>Live vessels <span class="more"><a href="vessels/" style="color:inherit;text-decoration:none">full list</a></span></h2>
+      <label class="chk"><input type="checkbox" id="aisOn">Show last AIS positions of sanctioned ships</label>
+      <div class="muted" id="aisNote">Positions from aisstream.io, refreshed every 15 minutes. Sanctioned tankers often switch AIS off; a missing ship means nothing on its own.</div>
+    </div>
+
+    <div class="sec"><h2>Listed by</h2><div id="auBox"></div></div>
+    <div class="sec"><h2>Kind</h2><div id="typeBox"></div></div>
+    <div class="sec">
+      <h2>Why listed</h2>
+      <div id="catBox"></div>
+      <div class="muted" style="margin-top:6px">Our grouping of the official program codes, not an official classification.</div>
+    </div>
+
+    <div class="sec">
+      <h2>Recent changes <span class="more" id="feedMore">show more</span></h2>
+      <svg class="spark" id="spark" preserveAspectRatio="none"></svg>
+      <input type="checkbox" id="chgMap" style="display:none">
+      <ul class="feed" id="feed"></ul>
+    </div>
+
+    <div class="sec"><h2>Explore</h2><div id="storyList" class="stories"></div></div>
+
+    <details id="adv"><summary class="sec"><h2 style="margin:0">Advanced filters <span class="more">programs, US lists, timeline, lines</span></h2></summary>
+    <div class="sec"><h2>US lists</h2><div id="srcBox"></div></div>
+    <div class="sec">
+      <h2>Programs</h2>
+      <div class="row" style="margin-bottom:6px"><button class="btn" id="progAll">All</button><button class="btn" id="progNone">None</button><input class="search" id="progQ" placeholder="filter" style="padding:4px 8px;font-size:12px"></div>
+      <div class="progs" id="progBox"></div>
+    </div>
+    <div class="sec">
+      <h2>Timeline</h2>
+      <div class="row"><span class="muted" style="width:44px">Listed</span><input type="range" id="yr" min="1990" max="2026" value="2026" style="flex:1"><b id="yrLabel" style="width:40px;text-align:right;font-weight:400">2026</b><button class="btn" id="yrPlay" style="padding:3px 8px">▶</button></div>
+      <label class="chk"><input type="checkbox" id="yrUndated" checked>Include parties with no listing date</label>
+      <label class="chk"><input type="checkbox" id="inclInf" checked>Include inferred locations</label>
+      <div class="muted" id="yrNote"></div>
+    </div>
+    <div class="sec">
+      <h2>Lines</h2>
+      <label class="chk"><input type="checkbox" id="lnLink" checked><span class="line-sw" style="color:#f0d9a6"></span>Linked to (from OFAC remarks)</label>
+      <label class="chk"><input type="checkbox" id="lnFoot" checked><span class="line-sw dash" style="color:#5fb8c4"></span>Same party, several places</label>
+      <label class="chk"><input type="checkbox" id="lnNat" checked><span class="line-sw dot" style="color:#b18fd9"></span>Nationality to residence</label>
+      <label class="chk" style="margin-top:6px"><input type="checkbox" id="onlyLinked">Only parties with lines</label>
+      <label class="chk" style="margin-top:6px"><input type="checkbox" id="choro" checked>Shade countries</label>
+      <select id="shadeMode" class="search" style="padding:5px 8px;font-size:12px;margin-top:2px">
+        <option value="parties">by number of listed parties</option><option value="programs">by number of programs</option><option value="changes">by changes in the last 30 days</option><option value="score">by intensity index</option></select>
+    </div>
+    </details>
+
+    <div class="sec muted">
+      Sources: US Consolidated Screening List (OFAC, BIS, State), EU, UK, UN, Australian and Canadian consolidated lists. Cross-list matching is by name and approximate. Basemap © OpenStreetMap contributors, via OpenFreeMap.
+      <div style="margin-top:8px"><a href="about.html">About</a> · <a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> · <a href="api/v1/feed.xml">RSS</a> · <a href="mailto:hello@sanctionscope.com">Contact</a></div>
+    </div>
+  </aside>
+
+  <main id="stage">
+    <div id="loading">Loading…</div>
+    <div id="map"></div>
+    <div id="modebar"><button data-m="parties" class="on">Parties</button><button data-m="score">Intensity</button><button data-m="changes">Activity</button><button data-m="compare">Authorities</button><span class="sep"></span><button id="globeBtn" title="Switch between globe and flat map">Globe</button></div>
+    <div id="hint"><span>Drag to spin, scroll to zoom. Click a cluster to open it, a dot for its record, a country for its overview.</span><button id="hintx" aria-label="Dismiss">×</button></div>
+    <button class="btn" id="railToggle">Search and filters</button>
+    <div id="legend"></div>
+    <div id="toast"></div>
+    <div id="story"><h5></h5><p></p><div class="row"><span class="step"></span><span><button class="btn" id="stPrev">Back</button> <button class="btn" id="stNext">Next</button> <button class="btn" id="stClose">Exit</button></span></div></div>
+    <aside id="drawer" aria-live="polite"><button class="close" id="dclose" aria-label="Close">×</button><div id="dbody"></div></aside>
+  </main>
+</div>
+
+<script type="module">
+import * as maplibregl from './vendor/maplibre-gl.mjs';
+// ============================================================ constants
+const SRC_COLOR={'OFAC SDN':'#e9b44c','OFAC other':'#d98b6a','BIS Entity List':'#5fb8c4','BIS other':'#7fd1b9','State / other':'#b18fd9','EU':'#6f9bdc','UK':'#c76f9b','UN':'#d9d3c3','AU':'#7fc47a','CA':'#e0665c'};
+const SRC_LABEL={'EU':'EU only','UK':'UK only','UN':'UN only','AU':'Australia only','CA':'Canada only'};
+const AUTH_NAME={US:'United States',EU:'European Union',UK:'United Kingdom',UN:'United Nations',AU:'Australia',CA:'Canada'};
+const TYPE_NAME={I:'Individual',E:'Entity',V:'Vessel',A:'Aircraft'}, TYPE_ORDER=['Individual','Entity','Vessel','Aircraft'];
+const CMP_A='#5fb8c4',CMP_B='#e9b44c',CMP_BOTH='#7fd1a0',ADD_COL='#7fd1a0';
+const CATS=[['Terrorism',/SDGT|FTO|SDT|HIZBALLAH|HAMAS|TERROR|AL-QAIDA|QAIDA|ISIL|DA'ESH|TALIBAN|:TAQA|^\w\w:AQ/i],['Weapons proliferation',/NPWMD|IFSR|DPRK|NKSPEA|IRAN-TRA|CAATSA|MISSILE|PROLIF|:PRK|KOREA|NUCLEAR|CHEM|WMD/i],['Narcotics and organised crime',/SDNTK|SDNT|ILLICIT-DRUGS|FENTANYL|TCO|CRIME|DRUG/i],['Human rights and corruption',/GLOMAG|HR|HRIT|MAGNIT|CORRUPT|ELECTION|HOSTAGE|ICC|HUMAN RIGHTS|:HR$|MISAPPROPRIATION/i],['Cyber',/CYBER|:CYB/i],['Russia and Ukraine',/RUSSIA|UKRAINE|CRIMEA|PAARSSR|SSIDL|BELARUS|:RUS|:UKR|:BLR/i],['Iran',/IRAN|IRGC|HRIT-IR|:IRN/i],['Other country programs',/SYRIA|CUBA|VENEZUELA|LIBYA|IRAQ|YEMEN|SOMALIA|SUDAN|DARFUR|CAR\b|DRCONGO|MALI|BURMA|BALKANS|HK-|NICARAGUA|ETHIOPIA|LEBANON|ZIMBABWE|AFGHANISTAN|CMIC|CHINESE|MILITARY|TALIBAN/i],['Export controls',/^EL$|ENTITY|DENIED|UNVERIFIED|MEU|EAR|ISN|INKSNA|AECA|DTC|DEBARRED/i]];
+const BASEMAP_LABELS='https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+
+// ============================================================ state
+let META,PARTIES=[],BYID=new Map(),EDGES=[],CHANGES={events:[],series:[]},PROG_CAT=[],CAT_PROGS=new Map();
+let filters={src:new Set(),type:new Set(),prog:new Set(),au:new Set()};let compare='',MODE='parties';
+let YEAR=2026,UNDATED=true,CHG=null,INCL_INF=true,ADDED=new Set();
+let VISIBLE=[],VEDGES=[],selected=null,COUNTRY_STATS=new Map(),CHANGE_CC=new Map(),countryCounts=new Map(),feedExpanded=false,urlLock=false;
+let centroidByISO=new Map(),nameByISO={},COUNTRIES;
+let map,popup,styleReady=false;let AIS=null;let linesShown=false;let pushTimer=0;
+
+// ============================================================ helpers
+const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function toast(msg){const el=document.getElementById('toast');el.textContent=msg;el.style.display='block';clearTimeout(el._t);el._t=setTimeout(()=>el.style.display='none',1800);}
+function hash(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return (h>>>0)/4294967296;}
+function catOf(code){for(const [c,re] of CATS)if(re.test(code))return c;return 'Other';}
+async function sha1(s){const b=await crypto.subtle.digest('SHA-1',new TextEncoder().encode(s));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');}
+const detailCache=new Map();
+async function details(id){if(detailCache.has(id))return detailCache.get(id);const sh=(await sha1(id)).slice(0,2);let recs=detailCache.get('shard:'+sh);if(!recs){try{recs=await (await fetch('api/v1/shards/'+sh+'.json')).json();}catch{recs={};}detailCache.set('shard:'+sh,recs);}const r=recs[id]||null;detailCache.set(id,r);return r;}
+
+// ============================================================ geography + placement
+const CENTROID_FIX={US:[-98.5,39.5],RU:[60,58],CA:[-100,55],NO:[9,61],CL:[-71,-33.5],ID:[112,-2.5],JP:[138,36.5],PH:[122,12],FR:[2.5,46.5],NL:[5.3,52.2],GB:[-1.5,52.5],NZ:[172,-41],MY:[102,3.5],DK:[9.5,56],GR:[22.5,39],HR:[16,45.5],IT:[12.5,42.5],VN:[106,16.5],FJ:[178,-17.8],BS:[-77.5,24.5],CU:[-79,21.7]};
+const EXTRA={HK:[114.17,22.32],MO:[113.55,22.19],SG:[103.85,1.29],MT:[14.4,35.9],BH:[50.55,26.2],KY:[-81.37,19.31],VG:[-64.62,18.43],VI:[-64.9,18.34],MH:[171.2,7.1],LI:[9.55,47.15],MC:[7.42,43.73],SC:[55.45,-4.62],MU:[57.55,-20.3],MV:[73.5,4.2],GI:[-5.35,36.14],IM:[-4.5,54.2],JE:[-2.1,49.2],GG:[-2.55,49.45],BM:[-64.75,32.3],CW:[-68.95,12.15],AW:[-70,12.5],SX:[-63.05,18.05],KN:[-62.75,17.3],VC:[-61.2,13.2],LC:[-61,13.9],AG:[-61.8,17.1],DM:[-61.4,15.4],GD:[-61.7,12.1],BB:[-59.55,13.15],KM:[43.3,-11.7],CV:[-23.6,15.1],ST:[6.6,0.2],PW:[134.5,7.5],WS:[-172.1,-13.8],TO:[-175.2,-21.2],KI:[173,1.4],FM:[158.2,6.9],NR:[166.9,-0.5],TV:[179.2,-8.5],AD:[1.5,42.5],SM:[12.45,43.95],VA:[12.45,41.9],CK:[-159.8,-21.2],XK:[20.9,42.6],TC:[-71.8,21.8],AI:[-63.05,18.2],MS:[-62.2,16.7],FO:[-6.8,62],RE:[55.5,-21.1],GU:[144.8,13.45],MP:[145.7,15.2],PF:[-149.5,-17.6],PS:[35.2,31.9],EH:[-13,24.5],LU:[6.13,49.6],QA:[51.2,25.3],KW:[47.7,29.3],DJ:[42.9,11.7],TL:[125.7,-8.8],BN:[114.7,4.5],CY:[33.2,35.1],LB:[35.8,33.9],IL:[35,31.4],SZ:[31.5,-26.5],LS:[28.2,-29.6],GM:[-15.5,13.5],TT:[-61.3,10.4],JM:[-77.3,18.1],PR:[-66.5,18.2],BZ:[-88.5,17.2],SV:[-88.9,13.8]};
+function setupGeo(world){
+  COUNTRIES=topojson.feature(world,world.objects.countries);COUNTRIES.features=COUNTRIES.features.filter(f=>f.properties.name!=='Antarctica');
+  const clamp=c=>{if(typeof c[0]==='number'){c[1]=Math.max(-84.9,Math.min(84.9,c[1]));return;}for(const x of c)clamp(x);};for(const f of COUNTRIES.features)clamp(f.geometry.coordinates);
+  const fixRing=r=>{let lo=180,hi=-180;for(const c of r){lo=Math.min(lo,c[0]);hi=Math.max(hi,c[0]);}if(hi-lo>180)for(const c of r)if(c[0]<0)c[0]+=360;};
+  for(const f of COUNTRIES.features){const g=f.geometry;if(g.type==='Polygon')g.coordinates.forEach(fixRing);else if(g.type==='MultiPolygon')g.coordinates.forEach(pg=>pg.forEach(fixRing));}
+  const numToISO={};for(const [iso,n] of Object.entries(META.iso_numeric))numToISO[String(n).padStart(3,'0')]=iso;
+  for(const f of COUNTRIES.features){const iso=numToISO[String(f.id).padStart(3,'0')];if(iso){f.iso=iso;centroidByISO.set(iso,d3.geoCentroid(f));}if(f.properties.name==='Kosovo')f.iso='XK';if(f.properties.name==='N. Cyprus')f.iso='CY';if(f.properties.name==='Somaliland')f.iso='SO';f.properties.iso=f.iso||'';}
+  for(const [k,v] of Object.entries(CENTROID_FIX))centroidByISO.set(k,v);for(const [k,v] of Object.entries(EXTRA))if(!centroidByISO.has(k))centroidByISO.set(k,v);
+  nameByISO=META.iso_name;
+}
+function place(){
+  const buckets=new Map();
+  for(const p of PARTIES){
+    p.edges=[];p.type=TYPE_NAME[p.t]||'Entity';
+    if(p.lat!=null){p.key='c:'+p.lat+','+p.lon;p.base=[p.lon,p.lat];}
+    else if(p.cc&&centroidByISO.has(p.cc)){p.key='k:'+p.cc;p.base=centroidByISO.get(p.cc);}
+    else{p.x=null;continue;}
+    if(!buckets.has(p.key))buckets.set(p.key,[]);buckets.get(p.key).push(p);
+  }
+  for(const [key,list] of buckets){
+    const isCity=key.startsWith('c:'),base=list[0].base,cosl=Math.max(0.25,Math.cos(base[1]*Math.PI/180)),step=isCity?0.006:0.22;
+    list.sort((a,b)=>hash(a.id)-hash(b.id));
+    list.forEach((p,i)=>{const r=step*Math.sqrt(i),th=i*2.39996;p.x=base[0]+r*Math.cos(th)/cosl;p.y=base[1]+r*Math.sin(th);});
+  }
+  for(const e of EDGES){
+    e.a=BYID.get(e.a);if(!e.a||e.a.x==null){e.skip=true;continue;}
+    if(e.k==='link'){e.b=BYID.get(e.b);if(!e.b||e.b.x==null){e.skip=true;continue;}e.from=[e.a.x,e.a.y];e.to=[e.b.x,e.b.y];e.a.edges.push(e);e.b.edges.push(e);}
+    else{let base=e.lat!=null?[e.lon,e.lat]:centroidByISO.get(e.cc);if(!base){e.skip=true;continue;}const cosl=Math.max(0.25,Math.cos(base[1]*Math.PI/180)),r=(e.lat!=null?0.06:0.5)*hash(e.a.id+e.k+(e.l||'')),th=hash(e.a.id+'t'+(e.l||''))*6.283;const pt=[base[0]+r*Math.cos(th)/cosl,base[1]+r*Math.sin(th)];if(e.k==='foot'){e.from=[e.a.x,e.a.y];e.to=pt;}else{e.from=pt;e.to=[e.a.x,e.a.y];}e.a.edges.push(e);}
+  }
+  EDGES=EDGES.filter(e=>!e.skip);
+  for(const e of EDGES){const ip=d3.geoInterpolate(e.from,e.to),n=Math.max(3,Math.min(24,Math.round(d3.geoDistance(e.from,e.to)*14)));e.pts=[];for(let i=0;i<=n;i++)e.pts.push(ip(i/n));
+    e.segs=[[]];for(let i=0;i<e.pts.length;i++){const pt=e.pts[i];const prev=e.pts[i-1];if(prev&&Math.abs(pt[0]-prev[0])>180)e.segs.push([]);e.segs[e.segs.length-1].push(pt);}}
+}
+
+// ============================================================ filters
+function cmpClass(p){if(!compare)return '';const [a,b]=compare.split('|');const ha=p.au.includes(a),hb=p.au.includes(b);return ha&&hb?'both':ha?'a':hb?'b':'';}
+function pcolor(p){if(CHG)return ADD_COL;if(compare){const c=cmpClass(p);return c==='both'?CMP_BOTH:c==='a'?CMP_A:CMP_B;}return SRC_COLOR[p.s]||'#ccc';}
+function passes(p){
+  if(p.x==null)return false;if(!INCL_INF&&p.inf)return false;if(CHG&&!ADDED.has(p.id))return false;if(p.ly?p.ly>YEAR:!UNDATED)return false;
+  if(!p.au.some(a=>filters.au.has(a)))return false;if(compare&&!cmpClass(p))return false;if(p.au.includes('US')&&!filters.src.has(p.s))return false;if(!filters.type.has(p.type))return false;
+  if(p.p.length&&!p.p.some(i=>filters.prog.has(i)))return false;return true;
+}
+function update(){
+  syncCats();
+  const kinds=new Set();if(document.getElementById('lnLink').checked)kinds.add('link');if(document.getElementById('lnFoot').checked)kinds.add('foot');if(document.getElementById('lnNat').checked)kinds.add('nat');
+  const vis=new Set();for(const p of PARTIES)if(passes(p))vis.add(p);
+  VEDGES=EDGES.filter(e=>kinds.has(e.k)&&vis.has(e.a)&&(!e.b||vis.has(e.b)));
+  if(document.getElementById('onlyLinked').checked){const keep=new Set();for(const e of VEDGES){keep.add(e.a);if(e.b)keep.add(e.b);}VISIBLE=[...keep];}else VISIBLE=[...vis];
+  countryCounts=new Map();for(const p of VISIBLE)if(p.cc)countryCounts.set(p.cc,(countryCounts.get(p.cc)||0)+1);
+  if(selected&&selected.x!=null&&!vis.has(selected)){selected=null;closeDrawer();}
+  const cn=document.getElementById('cmpNote');if(compare){const [a,b]=compare.split('|');let na=0,nb=0,nboth=0;for(const p of PARTIES){const c=cmpClass(p);if(c==='both')nboth++;else if(c==='a')na++;else if(c==='b')nb++;}cn.style.display='';cn.textContent=`${AUTH_NAME[a]} only ${na.toLocaleString()}, ${AUTH_NAME[b]} only ${nb.toLocaleString()}, both ${nboth.toLocaleString()}. Matching across lists is by name, so treat overlaps as approximate.`;}else cn.style.display='none';
+  document.getElementById('showing').textContent=`Showing ${VISIBLE.length.toLocaleString()} of ${PARTIES.length.toLocaleString()} parties`+(VEDGES.length?`, ${VEDGES.length.toLocaleString()} lines`:'');
+  pushData();renderLegend();writeURL();
+}
+// ============================================================ map layers
+function pointsGeoJSON(){
+  return {type:'FeatureCollection',features:VISIBLE.map(p=>({type:'Feature',geometry:{type:'Point',coordinates:[p.x,p.y]},properties:{id:p.id,col:pcolor(p),inf:p.inf?1:0,multi:p.au.length>1?1:0,sel:p===selected?1:0,nb:selected&&p.edges.some(e=>e.a===selected||e.b===selected)?1:0}}))};
+}
+function linesGeoJSON(){
+  const feats=[];const focus=!!selected;
+  if(!focus&&map.getZoom()<3)return {type:'FeatureCollection',features:feats};
+  for(const e of VEDGES){const isF=selected&&(e.a===selected||e.b===selected);for(const seg of e.segs)if(seg.length>1)feats.push({type:'Feature',geometry:{type:'LineString',coordinates:seg},properties:{k:e.k,f:isF?1:0,dim:focus&&!isF?1:0}});}
+  return {type:'FeatureCollection',features:feats};
+}
+function shadeValue(iso){const m=document.getElementById('shadeMode').value;if(m==='parties')return countryCounts.get(iso)||0;const c=COUNTRY_STATS.get(iso);if(!c)return 0;return m==='programs'?c.progs.size:m==='changes'?c.ch:c.score;}
+function fillExpression(){
+  const choro=document.getElementById('choro').checked;if(!choro)return 'rgba(0,0,0,0)';
+  const m=document.getElementById('shadeMode').value;let max=0;const vals={};
+  for(const f of COUNTRIES.features){if(!f.iso)continue;const v=shadeValue(f.iso);vals[f.iso]=v;if(v>max)max=v;}
+  if(!max)return 'rgba(0,0,0,0)';
+  const entries=['match',['get','iso']];
+  const ramp=m==='score'?(v)=>d3.interpolateRgb('rgba(233,180,76,0.05)','rgba(217,151,58,0.75)')(Math.pow(v/max,1.6)):m==='changes'?(v)=>d3.interpolateRgb('rgba(224,122,122,0.04)','rgba(224,122,122,0.6)')(Math.log1p(v)/Math.log1p(max)):(v)=>d3.interpolateRgb('rgba(233,180,76,0.02)','rgba(233,180,76,0.26)')(Math.log1p(v)/Math.log1p(max));
+  for(const [iso,v] of Object.entries(vals)){if(!v)continue;entries.push(iso,ramp(v));}
+  entries.push('rgba(0,0,0,0)');return entries.length>3?entries:'rgba(0,0,0,0)';
+}
+function pushData(){if(!styleReady)return;clearTimeout(pushTimer);pushTimer=setTimeout(pushDataNow,30);}
+function pushDataNow(){
+  linesShown=!!selected||map.getZoom()>=3;
+  map.getSource('pts').setData(pointsGeoJSON());
+  map.getSource('lines').setData(linesGeoJSON());
+  map.setPaintProperty('countries-fill','fill-color',fillExpression());
+  const choroOnly=MODE==='score';
+  for(const l of ['clusters','cluster-count','points','points-ring','lines','lines-other'])map.setLayoutProperty(l,'visibility',choroOnly?'none':'visible');
+  map.setPaintProperty('countries-line','line-opacity',choroOnly?0.6:0.25);
+}
+function addLayers(){
+  const firstSymbol=(map.getStyle().layers.find(l=>l.type==='symbol')||{}).id;
+  map.addSource('countries',{type:'geojson',data:COUNTRIES});
+  map.addLayer({id:'countries-fill',type:'fill',source:'countries',paint:{'fill-color':'rgba(0,0,0,0)','fill-opacity':1}},firstSymbol);
+  map.addLayer({id:'countries-line',type:'line',source:'countries',paint:{'line-color':'#e9b44c','line-width':0.5,'line-opacity':0.12}},firstSymbol);
+  map.addSource('lines',{type:'geojson',data:{type:'FeatureCollection',features:[]},maxzoom:10,buffer:0,tolerance:1.5});
+  map.addLayer({id:'lines',type:'line',source:'lines',layout:{'line-cap':'round'},filter:['==',['get','k'],'link'],paint:{
+    'line-color':['match',['get','k'],'link','#f0d9a6','foot','#5fb8c4','#b18fd9'],
+    'line-width':['case',['==',['get','f'],1],1.8,0.7],
+    'line-opacity':['interpolate',['linear'],['zoom'],1,['case',['==',['get','f'],1],0.95,['==',['get','dim'],1],0.03,0.06],4,['case',['==',['get','f'],1],0.95,['==',['get','dim'],1],0.05,0.35],8,['case',['==',['get','f'],1],1,['==',['get','dim'],1],0.04,0.16]],
+    }});
+  map.addLayer({id:'lines-other',type:'line',source:'lines',filter:['!=',['get','k'],'link'],paint:{
+    'line-color':['match',['get','k'],'foot','#5fb8c4','#b18fd9'],'line-width':['case',['==',['get','f'],1],1.6,0.7],'line-dasharray':[3,2],
+    'line-opacity':['case',['==',['get','f'],1],0.95,['==',['get','dim'],1],0.04,0.3]}});
+  map.addSource('pts',{type:'geojson',data:{type:'FeatureCollection',features:[]},maxzoom:12,buffer:0,cluster:true,clusterRadius:36,clusterMaxZoom:8,clusterProperties:{teal:['+',['case',['==',['get','col'],CMP_A],1,0]],green:['+',['case',['==',['get','col'],CMP_BOTH],1,0]]}});
+  map.addLayer({id:'clusters',type:'circle',source:'pts',filter:['has','point_count'],paint:{
+    'circle-color':['case',['>',['get','green'],['/',['get','point_count'],2]],CMP_BOTH,['>',['get','teal'],['/',['get','point_count'],2]],CMP_A,'#e9b44c'],
+    'circle-opacity':0.82,'circle-stroke-color':'#0b1321','circle-stroke-width':1,
+    'circle-radius':['interpolate',['linear'],['sqrt',['get','point_count']],1,7,10,14,50,24,150,34]}});
+  map.addLayer({id:'cluster-count',type:'symbol',source:'pts',filter:['has','point_count'],layout:{'text-field':['get','point_count_abbreviated'],'text-size':11,'text-font':['Open Sans Semibold'],'text-allow-overlap':true},paint:{'text-color':'#14110a'}});
+  map.addLayer({id:'points',type:'circle',source:'pts',filter:['!',['has','point_count']],paint:{
+    'circle-color':['get','col'],'circle-radius':['interpolate',['linear'],['zoom'],3,2.5,8,4.5,14,7],
+    'circle-opacity':['case',['==',['get','inf'],1],0,['==',['get','sel'],1],1,0.9],
+    'circle-stroke-color':['case',['==',['get','sel'],1],'#ffffff',['get','col']],'circle-stroke-width':['case',['==',['get','sel'],1],2,['==',['get','inf'],1],1.4,0]}});
+  map.addLayer({id:'points-ring',type:'circle',source:'pts',filter:['all',['!',['has','point_count']],['==',['get','multi'],1]],paint:{'circle-color':'rgba(0,0,0,0)','circle-radius':['interpolate',['linear'],['zoom'],3,5,8,8,14,11],'circle-stroke-color':'#ffffff','circle-stroke-width':0.8,'circle-stroke-opacity':0.7}});
+  map.addSource('ais-trail',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+  map.addLayer({id:'ais-trail',type:'line',source:'ais-trail',paint:{'line-color':'#7fd1b9','line-width':1.2,'line-opacity':0.6}});
+  map.addSource('ais',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+  map.addLayer({id:'ais-heading',type:'line',source:'ais',filter:['==',['geometry-type'],'LineString'],paint:{'line-color':'#7fd1b9','line-width':2}});
+  map.addLayer({id:'ais',type:'circle',source:'ais',filter:['==',['geometry-type'],'Point'],paint:{'circle-radius':['interpolate',['linear'],['zoom'],1,4,8,7],'circle-color':['case',['>',['get','age'],48],'#6f6a5e','#7fd1b9'],'circle-stroke-color':'#0b1321','circle-stroke-width':1.5}});
+  map.on('click','ais',e=>{const f=e.features[0];const p=BYID.get(f.properties.id);if(p)select(p,false);});
+  map.on('mouseenter','ais',()=>map.getCanvas().style.cursor='pointer');map.on('mouseleave','ais',()=>{map.getCanvas().style.cursor='';popup.remove();});
+  map.on('mousemove','ais',e=>{const f=e.features[0].properties;popup.setLngLat(e.features[0].geometry.coordinates).setHTML(`<b>${esc(f.name)}</b><br><span style="color:#a8a294">${esc(f.when)} · ${f.sog!=null?f.sog+' kn':''} ${f.dest?'· to '+esc(f.dest):''}</span>`).addTo(map);});
+  styleReady=true;
+  map.on('zoomend',()=>{const z=map.getZoom();if((z>=3)!==linesShown&&!selected){linesShown=z>=3;map.getSource('lines').setData(linesGeoJSON());}});
+  map.on('click','clusters',e=>{const f=e.features[0];map.getSource('pts').getClusterExpansionZoom(f.properties.cluster_id).then(z=>map.easeTo({center:f.geometry.coordinates,zoom:Math.min(14,Math.max(z,map.getZoom()+2.2)),duration:700}));});
+  map.on('click','points',e=>{const p=BYID.get(e.features[0].properties.id);if(p)select(p,false);});
+  map.on('click',e=>{const hit=map.queryRenderedFeatures(e.point,{layers:['points','clusters']});if(hit.length)return;const c=map.queryRenderedFeatures(e.point,{layers:['countries-fill']});if(c.length&&c[0].properties.iso&&(MODE==='score'||map.getZoom()<3)&&COUNTRY_STATS.has(c[0].properties.iso)){openCountry(c[0].properties.iso);return;}if(selected){selected=null;closeDrawer();pushData();writeURL();}});
+  for(const l of ['clusters','points']){map.on('mouseenter',l,()=>map.getCanvas().style.cursor='pointer');map.on('mouseleave',l,()=>{map.getCanvas().style.cursor='';popup.remove();});}
+  map.on('mousemove','points',e=>{const p=BYID.get(e.features[0].properties.id);if(!p)return;popup.setLngLat(e.features[0].geometry.coordinates).setHTML(`<b>${esc(p.n)}</b><br><span style="color:#a8a294">${esc(p.type)} · ${esc(p.city||nameByISO[p.cc]||'')}${p.inf?' (inferred)':''} · ${esc(p.au.join(', '))}${p.edges.length?' · '+p.edges.length+' line'+(p.edges.length>1?'s':''):''}</span>`).addTo(map);});
+  map.on('mousemove','clusters',e=>{const f=e.features[0];popup.setLngLat(f.geometry.coordinates).setHTML(`<b>${f.properties.point_count.toLocaleString()} parties</b><br><span style="color:#a8a294">click to open</span>`).addTo(map);});
+  map.on('mousemove',e=>{if(MODE!=='score')return;const c=map.queryRenderedFeatures(e.point,{layers:['countries-fill']});const iso=c.length&&c[0].properties.iso;const s=iso&&COUNTRY_STATS.get(iso);map.getCanvas().style.cursor=s?'pointer':'';if(s){popup.setLngLat(e.lngLat).setHTML(`<b>${esc(nameByISO[iso])}</b><br><span style="color:#a8a294">intensity ${s.score} · ${s.n.toLocaleString()} parties · ${s.progs.size} programs · click for details</span>`).addTo(map);}else popup.remove();});
+}
+async function loadStyle(){
+  // Basemap: OpenFreeMap (free, no key, commercial use allowed), recoloured to the site's dark palette.
+  // CARTO's basemaps now require an API key, which is why earlier versions showed no land.
+  try{
+    const r=await fetch('https://tiles.openfreemap.org/styles/positron',{signal:AbortSignal.timeout(8000)});if(!r.ok)throw 0;const st=await r.json();
+    st.projection={type:'globe'};
+    // Land is a single pre-rendered image (always resident, no tiles); OpenFreeMap detail only appears from zoom 4
+    for(const l of st.layers){if(l.type!=='background'){l.minzoom=Math.max(l.minzoom||0,4);}}
+    const water=/water|ocean|sea|lake|river/i, road=/road|highway|motorway|street|path|rail|bridge|tunnel|transit|aeroway|runway/i, bld=/building/i, boundary=/boundary|admin|border/i, green=/park|wood|forest|grass|landcover|landuse|glacier|scrub|farmland|cemetery|pitch|ice/i;
+    for(const l of st.layers){
+      l.paint=l.paint||{};
+      if(l.type==='background'){l.paint['background-color']='#0b1321';continue;}
+      if(l.type==='fill'){l.paint['fill-color']=water.test(l.id)?'#0b1321':bld.test(l.id)?'#1a2740':green.test(l.id)?'#152239':'#152036';l.paint['fill-outline-color']=water.test(l.id)?'#0b1321':'#1d2b45';delete l.paint['fill-pattern'];continue;}
+      if(l.type==='line'){l.paint['line-color']=boundary.test(l.id)?'#3a4d69':water.test(l.id)?'#0f1a2b':road.test(l.id)?'#25344d':'#22304a';continue;}
+      if(l.type==='symbol'){l.paint['text-color']=water.test(l.id)?'#3f5a7a':'#a8a294';l.paint['text-halo-color']='#0b1321';l.paint['text-halo-width']=1.2;if(l.paint['icon-color'])l.paint['icon-color']='#a8a294';continue;}
+      if(l.type==='fill-extrusion'){l.paint['fill-extrusion-color']='#1a2740';}
+    }
+    st.sources.landimg={type:'image',url:'vendor/land-mercator.png',coordinates:[[-180,85.0511],[180,85.0511],[180,-85.0511],[-180,-85.0511]]};
+    st.layers.splice(1,0,{id:'landimg',type:'raster',source:'landimg',paint:{'raster-opacity':1,'raster-fade-duration':0}});
+    return st;
+  }catch(e){console.warn('basemap unavailable, drawing plain land',e);
+    return {version:8,projection:{type:'globe'},glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',sources:{landimg:{type:'image',url:'vendor/land-mercator.png',coordinates:[[-180,85.0511],[180,85.0511],[180,-85.0511],[-180,-85.0511]]}},layers:[{id:'bg',type:'background',paint:{'background-color':'#0b1321'}},{id:'landimg',type:'raster',source:'landimg',paint:{'raster-fade-duration':0}}],metadata:{fallback:true}};}
+}
+
+function addCountryLabels(){
+  const feats=[];for(const [iso,base] of centroidByISO){const n=nameByISO[iso];if(!n||!COUNTRY_STATS.has(iso))continue;feats.push({type:'Feature',geometry:{type:'Point',coordinates:base},properties:{n:n.toUpperCase(),big:COUNTRY_STATS.get(iso).n>300?1:0}});}
+  map.addSource('clabels',{type:'geojson',data:{type:'FeatureCollection',features:feats}});
+  const font=(map.getStyle().glyphs||'').includes('openfreemap')?['Noto Sans Regular']:['Open Sans Semibold'];
+  map.addLayer({id:'clabels',type:'symbol',source:'clabels',maxzoom:4.5,layout:{'text-field':['get','n'],'text-font':font,'text-size':['interpolate',['linear'],['zoom'],1,8,4,12],'text-letter-spacing':0.12,'text-allow-overlap':false},paint:{'text-color':'#7f8aa0','text-halo-color':'#0b1321','text-halo-width':1}},'countries-fill');
+}
+
+// ============================================================ live AIS
+function agoText(ts){if(!ts)return 'no position';const h=(Date.now()-Date.parse(ts.replace(' ','T')+'Z'))/36e5;return h<1?`${Math.round(h*60)} min ago`:h<48?`${Math.round(h)} h ago`:`${Math.round(h/24)} days ago`;}
+async function loadAIS(){if(AIS)return AIS;try{AIS=await (await fetch('api/v1/vessels')).json();}catch{AIS={positions:{},meta:{}};}return AIS;}
+async function pushAIS(){
+  if(!styleReady)return;const on=document.getElementById('aisOn').checked;const note=document.getElementById('aisNote');
+  if(!on){map.getSource('ais').setData({type:'FeatureCollection',features:[]});map.getSource('ais-trail').setData({type:'FeatureCollection',features:[]});return;}
+  const d=await loadAIS();const pts=[],trails=[];let recent=0;
+  for(const [mmsi,p] of Object.entries(d.positions||{})){if(p.lat==null)continue;const party=BYID.get(p.id);const age=(Date.now()-Date.parse((p.ts||'').replace(' ','T')+'Z'))/36e5;if(age<24)recent++;
+    pts.push({type:'Feature',geometry:{type:'Point',coordinates:[p.lon,p.lat]},properties:{id:p.id,name:party?party.n:p.name||mmsi,when:agoText(p.ts),sog:p.sog,dest:p.dest||'',age}});
+    const hd=p.hdg!=null&&p.hdg<360?p.hdg:(p.cog!=null?p.cog:null);
+    if(hd!=null){const r=hd*Math.PI/180,len=0.25;pts.push({type:'Feature',geometry:{type:'LineString',coordinates:[[p.lon,p.lat],[p.lon+len*Math.sin(r)/Math.max(0.2,Math.cos(p.lat*Math.PI/180)),p.lat+len*Math.cos(r)]]},properties:{id:p.id}});}
+    if(p.trail&&p.trail.length>1)trails.push({type:'Feature',geometry:{type:'LineString',coordinates:p.trail.map(t=>[t[1],t[0]])},properties:{}});}
+  map.getSource('ais').setData({type:'FeatureCollection',features:pts});map.getSource('ais-trail').setData({type:'FeatureCollection',features:trails});
+  const m=d.meta||{};note.textContent=`${pts.filter(f=>f.geometry.type==='Point').length} of ${(m.roster||META.vessels_with_imo||0).toLocaleString()} sanctioned ships with a known position, ${recent} seen in the last 24 h. Updated ${m.updated?agoText(m.updated.replace('T',' ').replace('Z','')):'never'}. Grey = last seen over 48 h ago.`;
+}
+document.getElementById('aisOn').addEventListener('change',pushAIS);
+
+// ============================================================ UI rendering
+function chkRow(label,count,color,checked,onchange){
+  const l=document.createElement('label');l.className='chk';
+  l.innerHTML=`<input type="checkbox" ${checked?'checked':''}><span class="sw" style="background:${color}"></span><span class="lbl"></span><span class="n">${count.toLocaleString()}</span>`;
+  l.querySelector('.lbl').textContent=label;l.querySelector('input').addEventListener('change',e=>onchange(e.target.checked));return l;
+}
+function renderFilters(){
+  const ab=document.getElementById('auBox');ab.innerHTML='';
+  for(const a of ['US','EU','UK','UN','AU','CA']){const st=(META.authorities||{})[a];if(!st)continue;const row=chkRow(AUTH_NAME[a]+(st.ok?'':' (failed to load)'),st.n,a==='US'?'#e9b44c':SRC_COLOR[a],filters.au.has(a),v=>{v?filters.au.add(a):filters.au.delete(a);update();});if(!st.ok){row.style.opacity=.5;row.title=st.error;}ab.appendChild(row);}
+  const cs=document.getElementById('cmp');cs.innerHTML='<option value="">Compare two authorities…</option>';
+  const auths=['US','EU','UK','UN','AU','CA'].filter(a=>(META.authorities||{})[a]&&META.authorities[a].ok);
+  for(let i=0;i<auths.length;i++)for(let j=i+1;j<auths.length;j++)cs.insertAdjacentHTML('beforeend',`<option value="${auths[i]}|${auths[j]}">${AUTH_NAME[auths[i]]} vs ${AUTH_NAME[auths[j]]}</option>`);
+  cs.value=compare;
+  const sb=document.getElementById('srcBox');sb.innerHTML='';
+  for(const k of Object.keys(SRC_COLOR)){if(!META.sources[k])continue;sb.appendChild(chkRow(k,META.sources[k],SRC_COLOR[k],filters.src.has(k),v=>{v?filters.src.add(k):filters.src.delete(k);update();}));}
+  const tb=document.getElementById('typeBox');tb.innerHTML='';
+  for(const k of TYPE_ORDER){if(!META.types[k])continue;tb.appendChild(chkRow(k,META.types[k],'#eae6db',filters.type.has(k),v=>{v?filters.type.add(k):filters.type.delete(k);update();}));}
+  const cb=document.getElementById('catBox');cb.innerHTML='';
+  const catN=c=>CAT_PROGS.get(c).reduce((t,i)=>t+META.programs[i][1],0);
+  for(const [c,list] of [...CAT_PROGS.entries()].sort((a,b)=>catN(b[0])-catN(a[0]))){const on=list.some(i=>filters.prog.has(i));const row=chkRow(c,catN(c),'',on,v=>{for(const i of list)v?filters.prog.add(i):filters.prog.delete(i);renderProgs();update();});row.querySelector('.sw').style.display='none';row.querySelector('input').indeterminate=on&&!list.every(i=>filters.prog.has(i));cb.appendChild(row);}
+  renderProgs();renderLegend();
+}
+function syncCats(){const cb=document.getElementById('catBox');let i=0;const catN=c=>CAT_PROGS.get(c).reduce((t,j)=>t+META.programs[j][1],0);for(const [c,list] of [...CAT_PROGS.entries()].sort((a,b)=>catN(b[0])-catN(a[0]))){const inp=cb.querySelectorAll('input')[i++];if(!inp)continue;const on=list.some(j=>filters.prog.has(j));inp.checked=on;inp.indeterminate=on&&!list.every(j=>filters.prog.has(j));}}
+function renderProgs(){
+  const pb=document.getElementById('progBox');pb.innerHTML='';const q=document.getElementById('progQ').value.trim().toLowerCase();
+  META.programs.forEach(([k,n],i)=>{if(q&&!k.toLowerCase().includes(q))return;const row=chkRow(k,n,'',filters.prog.has(i),v=>{v?filters.prog.add(i):filters.prog.delete(i);update();});row.querySelector('.sw').style.display='none';pb.appendChild(row);});
+}
+function renderLegend(){
+  const lg=document.getElementById('legend');lg.innerHTML='';
+  const add=(col,lab)=>{const s=document.createElement('span');s.innerHTML=`<i style="background:${col}"></i>`;s.append(lab);lg.appendChild(s);};
+  if(MODE==='score'){const s=document.createElement('span');s.textContent='Countries shaded by intensity index (party count, programs, recent activity). Hover for the score, click for the panel.';lg.appendChild(s);return;}
+  if(CHG){add(ADD_COL,`added in the last ${CHG} days`);return;}
+  if(compare){const [a,b]=compare.split('|');add(CMP_A,AUTH_NAME[a]+' only');add(CMP_B,AUTH_NAME[b]+' only');add(CMP_BOTH,'both');return;}
+  for(const k of Object.keys(SRC_COLOR)){if(!(META.sources[k]||(META.authorities&&META.authorities[k]&&META.authorities[k].n)))continue;add(SRC_COLOR[k],SRC_LABEL[k]||k);}
+  const s=document.createElement('span');s.style.color='var(--ink-3)';s.textContent='ring = on more than one list · hollow = inferred location · clusters open on click';lg.appendChild(s);
+}
+
+// ============================================================ modes
+function setMode(m){
+  MODE=m;document.querySelectorAll('#modes input').forEach(r=>r.checked=r.value===m);document.querySelectorAll('#modebar button').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
+  document.getElementById('cmp').style.display=m==='compare'?'':'none';document.getElementById('chgOpts').style.display=m==='changes'?'':'none';
+  if(m!=='compare'){compare='';document.getElementById('cmp').value='';}else if(!compare){const o=document.getElementById('cmp').options[1];compare=o?o.value:'';document.getElementById('cmp').value=compare;}
+  document.getElementById('shadeMode').value=m==='score'?'score':m==='changes'?'changes':'parties';document.getElementById('choro').checked=true;
+  CHG=m==='changes'?+document.getElementById('chgWin').value:null;ADDED=new Set();
+  if(CHG){const cut=new Date(Date.now()-CHG*864e5).toISOString().slice(0,10);for(const e of (CHANGES.events||[]))if(e.op==='+'&&e.d>=cut)ADDED.add(e.id);}
+  update();
+}
+document.querySelectorAll('#modes input').forEach(r=>r.addEventListener('change',e=>setMode(e.target.value)));
+document.querySelectorAll('#modebar button').forEach(b=>b.addEventListener('click',()=>setMode(b.dataset.m)));
+document.getElementById('cmp').addEventListener('change',e=>{compare=e.target.value;if(!compare)setMode('parties');else update();});
+document.getElementById('chgWin').addEventListener('change',()=>setMode('changes'));
+document.getElementById('progQ').addEventListener('input',renderProgs);
+document.getElementById('progAll').onclick=()=>{filters.prog=new Set(META.programs.map((_,i)=>i));renderProgs();update();};
+document.getElementById('progNone').onclick=()=>{filters.prog=new Set();renderProgs();update();};
+['lnLink','lnFoot','lnNat','onlyLinked','choro'].forEach(id=>document.getElementById(id).addEventListener('change',update));
+document.getElementById('shadeMode').addEventListener('change',update);
+const yrEl=document.getElementById('yr');
+yrEl.addEventListener('input',()=>{YEAR=+yrEl.value;document.getElementById('yrLabel').textContent=YEAR;update();});
+document.getElementById('yrUndated').addEventListener('change',e=>{UNDATED=e.target.checked;update();});
+document.getElementById('inclInf').addEventListener('change',e=>{INCL_INF=e.target.checked;update();});
+let yrTimer=null;
+document.getElementById('yrPlay').onclick=()=>{const b=document.getElementById('yrPlay');if(yrTimer){clearInterval(yrTimer);yrTimer=null;b.textContent='▶';return;}if(+yrEl.value>=+yrEl.max)yrEl.value=yrEl.min;b.textContent='❚❚';yrTimer=setInterval(()=>{if(+yrEl.value>=+yrEl.max){clearInterval(yrTimer);yrTimer=null;b.textContent='▶';return;}yrEl.value=+yrEl.value+1;yrEl.dispatchEvent(new Event('input'));},700);};
+document.getElementById('hintx').onclick=()=>document.getElementById('hint').remove();
+let GLOBE=true;
+document.getElementById('globeBtn').onclick=()=>{GLOBE=!GLOBE;map.setProjection({type:GLOBE?'globe':'mercator'});document.getElementById('globeBtn').textContent=GLOBE?'Globe':'Flat';document.getElementById('globeBtn').classList.toggle('on',GLOBE);};
+document.getElementById('railToggle').onclick=()=>{const r=document.getElementById('rail');r.classList.toggle('open');document.getElementById('railToggle').textContent=r.classList.contains('open')?'Close':'Search and filters';};
+document.getElementById('railCollapse').onclick=()=>{document.getElementById('app').classList.toggle('collapsed');setTimeout(()=>map.resize(),60);};
+document.getElementById('hits').addEventListener('click',()=>{if(innerWidth<=760){document.getElementById('rail').classList.remove('open');document.getElementById('railToggle').textContent='Search and filters';}});
+
+// ============================================================ URL
+function writeURL(){
+  if(urlLock)return;const q=new URLSearchParams();
+  if(selected)q.set('p',selected.id);
+  if(MODE!=='parties')q.set('mode',MODE);if(compare)q.set('cmp',compare);
+  const allP=META.programs.length;if(filters.prog.size<allP&&filters.prog.size<=12)q.set('prog',[...filters.prog].map(i=>META.programs[i][0]).join(','));
+  if(filters.src.size<Object.keys(META.sources).length)q.set('src',[...filters.src].join(','));
+  if(META.authorities&&filters.au.size<Object.keys(META.authorities).length)q.set('au',[...filters.au].join(','));
+  if(filters.type.size<Object.keys(META.types).length)q.set('kind',[...filters.type].join(','));
+  const s=q.toString();history.replaceState(null,'',s?'#'+s:location.pathname);
+}
+function readURL(){
+  const q=new URLSearchParams(location.hash.slice(1));urlLock=true;
+  if(q.get('prog')){const names=new Set(q.get('prog').split(','));filters.prog=new Set(META.programs.map((p,i)=>names.has(p[0])?i:-1).filter(i=>i>=0));}
+  if(q.get('src'))filters.src=new Set(q.get('src').split(','));if(q.get('au'))filters.au=new Set(q.get('au').split(','));if(q.get('kind'))filters.type=new Set(q.get('kind').split(','));
+  if(q.get('cmp'))compare=q.get('cmp');
+  renderFilters();setMode(q.get('mode')||(compare?'compare':'parties'));urlLock=false;writeURL();
+  if(q.get('p')){const p=BYID.get(q.get('p'));if(p)select(p,true);}
+  else if(q.get('c')&&COUNTRY_STATS.has(q.get('c').toUpperCase())){const cc=q.get('c').toUpperCase();openCountry(cc);flyTo(centroidByISO.get(cc)||[0,0],3);}
+}
+window.addEventListener('hashchange',()=>{if(urlLock)return;const q=new URLSearchParams(location.hash.slice(1));const p=BYID.get(q.get('p'));if(p&&p!==selected){select(p,true);return;}const c=(q.get('c')||'').toUpperCase();if(c&&COUNTRY_STATS.has(c)){openCountry(c);flyTo(centroidByISO.get(c)||[0,0],3);}});
+
+// ============================================================ selection + drawers
+function flyTo(lonlat,zoom){map.flyTo({center:lonlat,zoom,duration:900,essential:true});}
+function closeDrawer(){document.getElementById('drawer').classList.remove('open');}
+document.getElementById('dclose').onclick=()=>{selected=null;closeDrawer();pushData();writeURL();};
+async function select(p,fly){
+  selected=p;pushData();writeURL();openDrawer(p);
+  if(fly&&p.x!=null)flyTo([p.x,p.y],p.lat!=null?11:4.5);
+}
+function bar(label,n,max,link){return `<div class="bar"><span class="bl">${link||esc(label)}</span><i style="width:${Math.max(2,100*n/max)}%"></i><span class="bn">${n.toLocaleString()}</span></div>`;}
+async function openDrawer(p){
+  const d=document.getElementById('drawer'),b=document.getElementById('dbody');d.classList.add('open');d.scrollTop=0;
+  b.innerHTML=`<h3>${esc(p.n)}</h3><div class="kind"><i style="background:${SRC_COLOR[p.s]}"></i>${esc(p.type)} · ${esc(p.s)}</div><p class="muted">Loading record…</p>`;
+  const r=await details(p.id);if(selected!==p)return;
+  const rows=[];const add=(k,v,small)=>{if(v&&String(v).trim())rows.push(`<dt>${esc(k)}</dt><dd class="${small?'small':''}">${v}</dd>`);};
+  if(p.x==null)rows.push(`<dt>Location</dt><dd class="small">None given on any list, so this party is not drawn on the map.</dd>`);
+  else if(p.inf)rows.push(`<dt>Location</dt><dd class="small">Inferred, not from an address: ${esc(((r&&r.a||[]).find(a=>a.startsWith('('))||'').replace(/^\(|\)$/g,''))}. Untick "Include inferred locations" under Advanced filters to hide such parties.</dd>`);
+  add('Listed by',(p.au||[]).map(a=>`<span class="chip" style="border-color:${a==='US'?'#e9b44c':SRC_COLOR[a]}">${esc(AUTH_NAME[a]||a)}</span>`).join(' ')+(p.au.length>1?'<div class="muted">Matched across lists by name; check each record.</div>':''));
+  if(r){
+    add('Programs',esc((r.p||[]).join(', ')));add('Address',(r.a||[]).map(esc).join('<br>'));add('Title',esc(r.ti));add('Also known as',esc((r.alt||[]).join('; ')),true);
+    add('Born',esc(r.dob));add('Nationality',esc((r.nat||[]).join(', ')));add('Place of birth',esc(r.pob));add('Vessel',esc(r.ves));add('IDs',esc(r.ids),true);add('Listed',esc(r.listed));
+    add('Remarks',r.rem&&r.rem.length>420?`<span class="clip">${esc(r.rem.slice(0,400))}… <a href="#" class="morelink">show all</a></span><span class="full" style="display:none">${esc(r.rem)}</span>`:esc(r.rem),true);
+    if(r.recs)add('Records',r.recs.map(x=>`<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(AUTH_NAME[x.au]||x.au)}</a>${x.listed?' <span class="muted">'+esc(x.listed)+'</span>':''}`).join('<br>'));else if(r.url)add('Source',`<a href="${esc(r.url)}" target="_blank" rel="noopener">Official record</a>`);
+  } else add('Record','<span class="muted">Full record unavailable right now.</span>');
+  const others=[],seen=new Set();
+  for(const e of p.edges){if(e.b){const q=e.a===p?e.b:e.a;if(!seen.has(q.id)){seen.add(q.id);others.push({q});}}else others.push({why:e.k==='foot'?'also at '+e.l:'national of '+e.l});}
+  const links=others.length?'<dt>Lines</dt><dd><ul class="links">'+others.map(o=>o.q?`<li data-i="${esc(o.q.id)}">${esc(o.q.n)}<span>${esc(o.q.type)}, ${esc(o.q.city||nameByISO[o.q.cc]||'')}</span></li>`:`<li style="cursor:default;color:var(--ink-2)">${esc(o.why)}</li>`).join('')+'</ul></dd>':'';
+  if(p.t==='V'){const d=await loadAIS();const rec=Object.values(d.positions||{}).find(x=>x.id===p.id);
+    if(rec&&rec.lat!=null)rows.push(`<dt>Last AIS</dt><dd>${esc(agoText(rec.ts))}${rec.sog!=null?`, ${rec.sog} kn`:''}${rec.dest?`, destination ${esc(rec.dest)}`:''}<br><span class="muted">${rec.lat.toFixed(3)}, ${rec.lon.toFixed(3)} · aisstream.io</span> <a href="#" class="aisgo">show on map</a></dd>`);
+    else rows.push(`<dt>Last AIS</dt><dd class="small">No position seen since tracking began. Sanctioned vessels commonly disable AIS.</dd>`);}
+  const hasNet=p.edges.some(e=>e.b);
+  b.innerHTML=`<h3>${esc(p.n)}</h3><div class="kind"><i style="background:${SRC_COLOR[p.s]}"></i>${esc(p.type)} · ${esc(p.s)}${r&&r.list?' · '+esc(r.list):''}</div>
+  <div class="tools"><button class="btn" id="share">Copy link</button>${r&&r.pg?`<a class="btn" href="parties/${esc(r.pg)}.html">Full page</a>`:''}${p.cc?`<button class="btn" id="cty">${esc(nameByISO[p.cc]||p.cc)}</button>`:''}${p.x!=null?`<button class="btn" id="zoomp">Zoom here</button>`:''}</div>
+  ${hasNet?'<svg id="net"></svg>':''}<dl>${rows.join('')}${links}</dl>`;
+  b.querySelector('#share').onclick=()=>{navigator.clipboard.writeText(location.href).then(()=>toast('Link copied'),()=>toast(location.href));};
+  if(p.cc)b.querySelector('#cty').onclick=()=>openCountry(p.cc);
+  const zp=b.querySelector('#zoomp');if(zp)zp.onclick=()=>flyTo([p.x,p.y],12);
+  b.querySelectorAll('li[data-i]').forEach(li=>li.onclick=()=>{const q=BYID.get(li.dataset.i);if(q)select(q,true);});
+  const ag=b.querySelector('.aisgo');if(ag)ag.onclick=async e=>{e.preventDefault();document.getElementById('aisOn').checked=true;await pushAIS();const rec=Object.values((AIS||{}).positions||{}).find(x=>x.id===p.id);if(rec)flyTo([rec.lon,rec.lat],7);};
+  const ml=b.querySelector('.morelink');if(ml)ml.onclick=e=>{e.preventDefault();b.querySelector('.clip').style.display='none';b.querySelector('.full').style.display='';};
+  if(hasNet)drawNet(p);
+}
+function drawNet(root){
+  const nodes=new Map([[root.id,root]]),links=[];const frontier=[root];
+  for(let hop=0;hop<2&&nodes.size<60;hop++){const next=[];for(const p of frontier)for(const e of p.edges){if(!e.b)continue;const q=e.a===p?e.b:e.a;if(!nodes.has(q.id)){if(nodes.size>=60)break;nodes.set(q.id,q);next.push(q);}links.push([e.a.id,e.b.id]);}frontier.splice(0,frontier.length,...next);}
+  const lk=new Set();const L=[];for(const [a,b] of links){const k=a<b?a+'|'+b:b+'|'+a;if(lk.has(k)||!nodes.has(a)||!nodes.has(b))continue;lk.add(k);L.push({source:a,target:b});}
+  const N=[...nodes.values()].map(p=>({id:p.id,p}));
+  const svg=d3.select('#net'),w=svg.node().clientWidth||340,h=240;svg.attr('viewBox',`0 0 ${w} ${h}`);
+  const sim=d3.forceSimulation(N).force('link',d3.forceLink(L).id(d=>d.id).distance(38)).force('charge',d3.forceManyBody().strength(-110)).force('center',d3.forceCenter(w/2,h/2)).force('collide',d3.forceCollide(12)).stop();
+  for(let i=0;i<200;i++)sim.tick();
+  const g=svg.append('g');
+  g.selectAll('line').data(L).join('line').attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y).attr('stroke','#f0d9a6').attr('stroke-opacity',0.5);
+  g.selectAll('circle').data(N).join('circle').attr('cx',d=>d.x).attr('cy',d=>d.y).attr('r',d=>d.p===root?6:4).attr('fill',d=>SRC_COLOR[d.p.s]).attr('stroke',d=>d.p===root?'#fff':'none').on('click',(ev,d)=>select(d.p,true)).append('title').text(d=>d.p.n);
+  g.selectAll('text').data(N.filter(d=>d.p===root||N.length<=14)).join('text').attr('x',d=>d.x+7).attr('y',d=>d.y+3).text(d=>d.p.n.length>26?d.p.n.slice(0,24)+'…':d.p.n);
+}
+function openCountry(cc){
+  const c=COUNTRY_STATS.get(cc);if(!c)return;const d=document.getElementById('drawer'),b=document.getElementById('dbody');const name=nameByISO[cc]||cc;
+  const top=(m,k)=>[...m.entries()].sort((x,y)=>y[1]-x[1]).slice(0,k);
+  const progs=top(c.progs,8),cats=top(c.cats,9),cities=top(c.cities,8),types=top(c.types,4),aus=top(c.au,6);
+  const recent=(CHANGES.events||[]).filter(e=>e.cc===cc).slice(0,12);
+  const linked=PARTIES.filter(p=>p.cc===cc&&p.edges.some(e=>e.b)).sort((x,y)=>y.edges.length-x.edges.length).slice(0,8);
+  b.innerHTML=`<h3>${esc(name)}</h3><div class="kind">Country overview</div>
+  <div class="tools"><button class="btn" id="cZoom">Zoom in</button><button class="btn" id="cFilter">Filter to its programs</button><button class="btn" id="cShare">Copy link</button><a class="btn" href="countries/${cc.toLowerCase()}.html">Full page</a></div>
+  <div class="stats"><div><b>${c.n.toLocaleString()}</b>parties</div><div><b>${c.au.size}</b>authorities</div><div><b>${c.progs.size}</b>programs</div><div><b>${c.ch}</b>changes, 30 days</div><div><b>${c.score}</b>intensity index</div></div>
+  <div class="muted" style="margin:-4px 0 12px">Intensity index is this site's composite of party count, program count and recent activity, scaled 0 to 10. A visualisation aid, not a legal assessment.</div>
+  <h4>Listed by</h4>${aus.map(([k,n])=>bar(AUTH_NAME[k]||k,n,aus[0][1])).join('')}
+  <h4>Why listed</h4>${cats.map(([k,n])=>bar(k,n,cats[0][1])).join('')}
+  <h4>Programs</h4>${progs.map(([k,n])=>bar(k,n,progs[0][1],`<a href="programs/${k.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')}/">${esc(k)}</a>`)).join('')}
+  <h4>Kind</h4>${types.map(([k,n])=>bar(k,n,types[0][1])).join('')}
+  ${cities.length?`<h4>Cities</h4>${cities.map(([k,n])=>bar(k,n,cities[0][1])).join('')}`:''}
+  ${linked.length?`<h4>Most connected</h4><ul class="links">${linked.map(p=>`<li data-i="${esc(p.id)}">${esc(p.n)}<span>${esc(p.type)}, ${p.edges.filter(e=>e.b).length} links</span></li>`).join('')}</ul>`:''}
+  ${recent.length?`<h4>Recent changes</h4><ul class="links">${recent.map(e=>`<li data-i="${esc(e.id)}"><span class="op ${e.op==='+'?'plus':'minus'}" style="margin:0 6px 0 0">${e.op}</span>${esc(e.n)}<span>${esc(e.d)}</span></li>`).join('')}</ul>`:''}`;
+  b.querySelector('#cZoom').onclick=()=>flyTo(centroidByISO.get(cc)||[0,0],4);
+  b.querySelector('#cFilter').onclick=()=>{filters.prog=new Set([...c.progs.keys()].map(g=>META.programs.findIndex(x=>x[0]===g)).filter(i=>i>=0));renderProgs();update();toast('Programs filtered to '+name);};
+  b.querySelector('#cShare').onclick=()=>{const q=new URLSearchParams(location.hash.slice(1));q.delete('p');q.set('c',cc.toLowerCase());const u=location.origin+location.pathname+'#'+q.toString();navigator.clipboard.writeText(u).then(()=>toast('Link copied'),()=>toast(u));};
+  b.querySelectorAll('li[data-i]').forEach(li=>li.onclick=()=>{const q=BYID.get(li.dataset.i);if(q)select(q,true);});
+  selected=null;d.classList.add('open');d.scrollTop=0;pushData();
+}
+
+// ============================================================ search
+const qEl=document.getElementById('q'),hitsEl=document.getElementById('hits');
+const normS=s=>(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+qEl.addEventListener('input',()=>{
+  const q=normS(qEl.value.trim());hitsEl.innerHTML='';if(q.length<2)return;
+  const cc=Object.entries(nameByISO).filter(([iso,n])=>COUNTRY_STATS.has(iso)&&normS(n).includes(q)).slice(0,4);
+  const progs=META.programs.map((p,i)=>[p[0],p[1],i]).filter(p=>p[0].toLowerCase().includes(q)).slice(0,4);
+  const out=[];for(const p of PARTIES){if(normS(p.n).includes(q)||(p.alt||[]).some(a=>normS(a).includes(q))){out.push(p);if(out.length>=30)break;}}
+  const head=t=>{const li=document.createElement('li');li.className='kind';li.textContent=t;hitsEl.appendChild(li);};
+  const mk=(name,right,onclick)=>{const li=document.createElement('li');li.tabIndex=0;li.innerHTML=`<span class="nm"></span><span class="cty"></span>`;li.querySelector('.nm').textContent=name;li.querySelector('.cty').textContent=right;li.onclick=onclick;li.onkeydown=e=>{if(e.key==='Enter')onclick();};hitsEl.appendChild(li);};
+  if(cc.length){head('COUNTRIES');for(const [iso,n] of cc)mk(n,COUNTRY_STATS.get(iso).n.toLocaleString()+' parties',()=>{openCountry(iso);flyTo(centroidByISO.get(iso),3.5);});}
+  if(progs.length){head('PROGRAMS');for(const [code,n,i] of progs)mk(code,n.toLocaleString()+' parties',()=>{filters.prog=new Set([i]);renderProgs();update();toast('Filtered to '+code);});}
+  if(out.length){head('PARTIES');for(const p of out)mk(p.n,p.city||nameByISO[p.cc]||'no location',()=>select(p,true));}
+  if(!cc.length&&!progs.length&&!out.length){const li=document.createElement('li');li.style.color='var(--ink-3)';li.textContent='No match';hitsEl.appendChild(li);}
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){if(story){endStory();return;}if(document.getElementById('drawer').classList.contains('open')){selected=null;closeDrawer();pushData();writeURL();}const h=document.getElementById('hint');if(h)h.remove();}
+  if(e.key==='Enter'&&document.activeElement===qEl){const li=hitsEl.querySelector('li:not(.kind)');if(li)li.click();}
+  if(e.key==='/'&&document.activeElement!==qEl&&document.activeElement.tagName!=='INPUT'){e.preventDefault();qEl.focus();qEl.select();}
+});
+
+// ============================================================ change feed
+function renderFeed(){
+  const ul=document.getElementById('feed');ul.innerHTML='';const ev=CHANGES.events||[];const show=feedExpanded?ev.slice(0,400):ev.slice(0,25);
+  document.getElementById('feedMore').style.display=ev.length>25?'':'none';document.getElementById('feedMore').textContent=feedExpanded?'show less':`show more (${ev.length})`;
+  if(!ev.length){const li=document.createElement('li');li.className='d';li.textContent=CHANGES.series&&CHANGES.series.length>1?'No additions or removals since the last build.':'Change tracking starts with the second nightly build.';ul.appendChild(li);}
+  let lastD=null;
+  for(const e of show){if(e.d!==lastD){lastD=e.d;const li=document.createElement('li');li.className='d';li.textContent=new Date(e.d+'T00:00:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'});ul.appendChild(li);}
+    const li=document.createElement('li');li.innerHTML=`<span class="op ${e.op==='+'?'plus':'minus'}">${e.op}</span><div><div class="nm"></div><div class="meta"></div></div>`;
+    li.querySelector('.nm').textContent=e.n;li.querySelector('.meta').textContent=[e.t,e.s,(e.p||[]).join(', '),nameByISO[e.cc]||''].filter(Boolean).join(' · ');
+    li.onclick=()=>{const p=BYID.get(e.id);if(p)select(p,p.x!=null);else toast('Removed from the list, so no longer in the data');};ul.appendChild(li);}
+  const s=CHANGES.series||[];const svg=document.getElementById('spark');svg.innerHTML='';
+  if(s.length>=2){const w=300,h=36;svg.setAttribute('viewBox',`0 0 ${w} ${h}`);const x=d3.scaleLinear().domain([0,s.length-1]).range([2,w-2]);const ext=d3.extent(s,d=>d.n);const y=d3.scaleLinear().domain([ext[0]-1,ext[1]+1]).range([h-3,3]);const line=d3.line().x((d,i)=>x(i)).y(d=>y(d.n));svg.innerHTML=`<path d="${line(s)}" fill="none" stroke="#e9b44c" stroke-width="1.5"/>`;}else svg.style.display='none';
+}
+document.getElementById('feedMore').onclick=()=>{feedExpanded=!feedExpanded;renderFeed();};
+
+// ============================================================ stories
+const STORIES=[
+ {title:'Where the sanctioning powers agree',blurb:'US versus EU, then US versus UK',steps:[
+  {t:'Six lists, one map',x:'Every party on the US, EU, UK, UN, Australian and Canadian lists. A white ring marks a party that appears on more than one.',st:{reset:true}},
+  {t:'United States versus European Union',x:'Teal is US-only, gold is EU-only, green is both. The overlap is where transatlantic policy aligns; the teal mass is the US going further, mostly on Iran, narcotics and terrorism.',st:{cmp:'US|EU',reset:true}},
+  {t:'Russia',x:'On Russia the lists overlap heavily, yet each side has designated thousands the other has not. Compare the green share here with Iran.',st:{cmp:'US|EU',c:'RU',k:3}},
+  {t:'Iran',x:'Iran is where the lists diverge most: US designations run into the thousands while EU measures are narrower.',st:{cmp:'US|EU',c:'IR',k:4.5}},
+  {t:'United States versus United Kingdom',x:'The UK list after Brexit tracks the EU on Russia but the US on much else. Switch the compare menu to any pair to keep exploring.',st:{cmp:'US|UK',reset:true}}]},
+ {title:'The shadow fleet',blurb:'Sanctioned vessels and their flags',steps:[
+  {t:'Ships only',x:'Most vessels publish no address, so they sit on the country of their flag state. Watch where they cluster.',st:{kind:['Vessel'],reset:true}},
+  {t:'Where they actually are',x:'Teal markers are live AIS positions of sanctioned ships, with a 24-hour trail; grey ones were last heard over two days ago. Many go dark on purpose.',st:{kind:['Vessel'],ais:true,reset:true}},
+  {t:'Flags of convenience',x:'Panama, Liberia, the Marshall Islands, Gabon, Cameroon: the flags used by tankers moving Russian and Iranian oil outside the price cap.',st:{kind:['Vessel'],c:'PA',k:3}},
+  {t:'Iranian oil',x:'Filter to Iran-related programs and the fleet lights up around Bandar Abbas and the Gulf.',st:{kind:['Vessel'],cat:'Iran',c:'IR',k:4.5}}]},
+ {title:"Iran's network",blurb:'From the IRGC outward, two hops at a time',steps:[
+  {t:'Islamic Revolutionary Guard Corps',x:'One of the most connected parties on any list. Every gold line is a "Linked To" relationship written into an OFAC record.',st:{find:'ISLAMIC REVOLUTIONARY GUARD CORPS'}},
+  {t:'Front companies abroad',x:'Follow the lines to Dubai, Istanbul, Hong Kong and Shenzhen. Click any linked party in the panel to jump along the chain.',st:{find:'ISLAMIC REVOLUTIONARY GUARD CORPS',c:'AE',k:5}},
+  {t:'Only the connected',x:'Ticking "only parties with lines" strips the map down to the network itself.',st:{cat:'Iran',onlyLinked:true,c:'IR',k:4}}]},
+ {title:'Export controls on Chinese technology',blurb:'The BIS Entity List, city by city',steps:[
+  {t:'The Entity List',x:'Not a sanctions list in the OFAC sense: it restricts exports of controlled technology to the named party. It is dominated by China.',st:{prog:['ENTITY-LIST'],reset:true}},
+  {t:'Shenzhen, Beijing, Shanghai',x:'Semiconductor, AI and surveillance firms concentrate in three cities. Zoom into any cluster to see individual companies.',st:{prog:['ENTITY-LIST'],c:'CN',k:4}},
+  {t:'Beyond China',x:'The same list reaches Russia, Iran, the UAE and Pakistan, mostly through transshipment fronts.',st:{prog:['ENTITY-LIST'],reset:true}}]},
+ {title:'Narcotics',blurb:'Kingpin Act designations across the Americas',steps:[
+  {t:'The Kingpin Act and fentanyl',x:'SDNTK and the 2021 illicit-drugs order target cartels, their money launderers and precursor suppliers.',st:{cat:'Narcotics and organised crime',reset:true}},
+  {t:'Mexico',x:'Culiacán, Guadalajara and Tijuana: the Sinaloa and Jalisco networks and the businesses that wash their money.',st:{cat:'Narcotics and organised crime',c:'MX',k:5}},
+  {t:'The precursor chain',x:'Follow the lines out of Mexico to China and India: chemical suppliers designated for fentanyl precursors.',st:{cat:'Narcotics and organised crime',onlyLinked:true,reset:true}}]},
+];
+let story=null,stepI=0;
+function renderStories(){const el=document.getElementById('storyList');el.innerHTML='';STORIES.forEach((s,i)=>{const b=document.createElement('button');b.innerHTML=`${esc(s.title)}<small>${esc(s.blurb)} · ${s.steps.length} steps</small>`;b.onclick=()=>startStory(i);el.appendChild(b);});}
+function applyState(st){
+  urlLock=true;
+  if(st.reset||st.cmp!==undefined||st.kind||st.prog||st.cat){filters.src=new Set(Object.keys(META.sources));filters.type=new Set(Object.keys(META.types));filters.prog=new Set(META.programs.map((_,i)=>i));filters.au=new Set(Object.keys(META.authorities||{US:1}));compare='';document.getElementById('onlyLinked').checked=false;}
+  if(st.kind)filters.type=new Set(st.kind);if(st.prog){const names=new Set(st.prog);filters.prog=new Set(META.programs.map((p,i)=>names.has(p[0])?i:-1).filter(i=>i>=0));}if(st.cat)filters.prog=new Set(CAT_PROGS.get(st.cat)||[]);
+  if(st.onlyLinked)document.getElementById('onlyLinked').checked=true;
+  document.getElementById('aisOn').checked=!!st.ais;pushAIS();
+  renderFilters();if(st.cmp){compare=st.cmp;setMode('compare');}else setMode('parties');urlLock=false;writeURL();
+  selected=null;closeDrawer();
+  if(st.find){const p=PARTIES.find(q=>q.n===st.find&&q.x!=null)||PARTIES.find(q=>q.n.toUpperCase().includes(st.find)&&q.x!=null);if(p)select(p,!st.c);}
+  if(st.c){const base=centroidByISO.get(st.c);if(base)flyTo(base,st.k||3);}else if(st.reset&&!st.find)map.flyTo({center:[25,25],zoom:1.6,duration:900});
+}
+function startStory(i){story=STORIES[i];stepI=0;showStep();if(innerWidth<=760){document.getElementById('rail').classList.remove('open');document.getElementById('railToggle').textContent='Search and filters';}}
+function showStep(){const s=story.steps[stepI],el=document.getElementById('story');el.style.display='block';el.querySelector('h5').textContent=s.t;el.querySelector('p').textContent=s.x;el.querySelector('.step').textContent=`${story.title} · ${stepI+1} of ${story.steps.length}`;document.getElementById('stPrev').disabled=stepI===0;document.getElementById('stNext').textContent=stepI===story.steps.length-1?'Finish':'Next';applyState(s.st);}
+document.getElementById('stNext').onclick=()=>{if(stepI<story.steps.length-1){stepI++;showStep();}else endStory();};
+document.getElementById('stPrev').onclick=()=>{if(stepI>0){stepI--;showStep();}};
+document.getElementById('stClose').onclick=endStory;
+function endStory(){story=null;document.getElementById('story').style.display='none';}
+
+// ============================================================ boot
+async function boot(){
+  const loadingEl=document.getElementById('loading');
+  const partsFetch=async()=>{const m=await fetch('data/map.json').then(r=>r.json());let done=0;const all=await Promise.all(m.parts.map(async n=>{const j=await (await fetch('data/'+n)).json();done++;loadingEl.textContent=`Loading parties… ${done} of ${m.parts.length}`;return j;}));m.parties=[].concat(...all);return m;};
+  const [meta,data,changes,world,style]=await Promise.all([fetch('data/meta.json').then(r=>r.json()),partsFetch(),fetch('data/changes.json').then(r=>r.json()).catch(()=>({events:[],series:[]})),fetch('vendor/countries-110m.json').then(r=>r.json()),loadStyle()]);
+  META=meta;PARTIES=data.parties;EDGES=data.edges;CHANGES=changes;
+  META.programs=data.programs.map(code=>[code,(meta.programs.find(x=>x[0]===code)||[code,0])[1]]);
+  for(const p of PARTIES){BYID.set(p.id,p);if(!p.au)p.au=['US'];if(!p.p)p.p=[];}
+  setupGeo(world);place();
+  META.programs.forEach(([code],i)=>{const c=catOf(code);PROG_CAT[i]=c;if(!CAT_PROGS.has(c))CAT_PROGS.set(c,[]);CAT_PROGS.get(c).push(i);});
+  filters.src=new Set(Object.keys(META.sources));filters.type=new Set(Object.keys(META.types));filters.prog=new Set(META.programs.map((_,i)=>i));filters.au=new Set(Object.keys(META.authorities||{US:1}));
+  const cut=new Date(Date.now()-30*864e5).toISOString().slice(0,10);for(const e of (CHANGES.events||[]))if(e.d>=cut&&e.cc)CHANGE_CC.set(e.cc,(CHANGE_CC.get(e.cc)||0)+1);
+  for(const p of PARTIES){if(!p.cc)continue;let c=COUNTRY_STATS.get(p.cc);if(!c){c={cc:p.cc,n:0,progs:new Map(),types:new Map(),cities:new Map(),cats:new Map(),au:new Map()};COUNTRY_STATS.set(p.cc,c);}
+    c.n++;for(const a of p.au)c.au.set(a,(c.au.get(a)||0)+1);c.types.set(p.type,(c.types.get(p.type)||0)+1);if(p.city)c.cities.set(p.city,(c.cities.get(p.city)||0)+1);
+    const seenCat=new Set();for(const i of p.p){const g=META.programs[i][0];c.progs.set(g,(c.progs.get(g)||0)+1);const k=PROG_CAT[i]||'Other';if(!seenCat.has(k)){seenCat.add(k);c.cats.set(k,(c.cats.get(k)||0)+1);}}}
+  let maxN=1,maxP=1,maxCh=1;for(const c of COUNTRY_STATS.values()){maxN=Math.max(maxN,c.n);maxP=Math.max(maxP,c.progs.size);}for(const v of CHANGE_CC.values())maxCh=Math.max(maxCh,v);
+  for(const c of COUNTRY_STATS.values()){c.ch=CHANGE_CC.get(c.cc)||0;c.score=Math.round(10*(0.5*Math.log1p(c.n)/Math.log1p(maxN)+0.3*c.progs.size/maxP+0.2*Math.log1p(c.ch)/Math.log1p(maxCh))*10)/10;}
+  {const ys=PARTIES.map(p=>p.ly).filter(Boolean);const lo=ys.length?Math.max(1960,d3.min(ys)):1990,hi=Math.max(new Date().getFullYear(),ys.length?d3.max(ys):0);yrEl.min=lo;yrEl.max=hi;yrEl.value=hi;YEAR=hi;document.getElementById('yrLabel').textContent=hi;
+   document.getElementById('yrNote').textContent=`Listing dates are published for ${(META.dated||ys.length).toLocaleString()} of ${META.parties.toLocaleString()} parties (the EU, UK, UN, Australian and Canadian lists; OFAC does not publish them in this feed).`;}
+  const okA=Object.entries(META.authorities||{}).filter(([a,v])=>v.ok).map(([a])=>a);const failA=Object.entries(META.authorities||{}).filter(([a,v])=>!v.ok).map(([a])=>AUTH_NAME[a]);
+  document.getElementById('stamp').innerHTML=`<b>${META.parties.toLocaleString()}</b> parties from ${okA.length} authorities (${okA.join(', ')})${META.multi_listed?`, ${META.multi_listed.toLocaleString()} on more than one list`:''}.${failA.length?` <span class="minus">${failA.join(', ')} failed to load this build.</span>`:''} ${META.with_city.toLocaleString()} placed to a city. Updated ${new Date(META.built).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}.`+(CHANGES.series&&CHANGES.series.length>1?` Last build: <span class="plus">+${META.added_today}</span> <span class="minus">−${META.removed_today}</span>.`:'');
+  document.getElementById('navstamp').textContent=`${META.parties.toLocaleString()} parties · updated ${new Date(META.built).toLocaleDateString(undefined,{month:'short',day:'numeric'})}`;
+  renderStories();renderFeed();
+  map=new maplibregl.Map({container:'map',style,center:[25,25],zoom:1.6,minZoom:0.8,maxZoom:16,attributionControl:{compact:true},fadeDuration:0,maxTileCacheSize:6000,refreshExpiredTiles:false});map.setPrefetchZoomDelta?map.setPrefetchZoomDelta(6):null;
+  document.getElementById('globeBtn').classList.add('on');
+  map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-left');
+  popup=new maplibregl.Popup({closeButton:false,closeOnClick:false,offset:8});
+  let setupDone=false;const onLoad=()=>{if(setupDone)return;setupDone=true;try{addLayers();addCountryLabels();readURL();}catch(e){console.error('setup failed',e);toast('Map setup failed: '+e.message);}loadingEl.style.display='none';};
+  map.once('load',onLoad);const poll=setInterval(()=>{if(setupDone){clearInterval(poll);return;}if(map.isStyleLoaded()){map.triggerRepaint();if(map.loaded())onLoad();}},500);
+  map.on('error',e=>{console.warn('map error',e&&e.error&&e.error.message);});
+  window.__ss={get AIS(){return AIS},get map(){return map},get VISIBLE(){return VISIBLE},get PARTIES(){return PARTIES},get filters(){return filters},get MODE(){return MODE},get compare(){return compare},select,openCountry,setMode,update,centroidByISO};
+}
+boot().catch(err=>{document.getElementById('loading').textContent='Could not load: '+err.message;console.error(err);});
+</script>
+</body>
+</html>
