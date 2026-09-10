@@ -328,14 +328,15 @@ function paintChoro(force){
   const sig=[MODE,document.getElementById('choro').checked,document.getElementById('shadeMode').value,VISIBLE.length].join('|');
   if(!force&&sig===texSig&&choroCanvas)return false;      // nothing the texture depends on has changed
   texSig=sig;
-  if(!choroCanvas){choroCanvas=document.createElement('canvas');choroCanvas.width=choroCanvas.height=CH;buildChoroPaths();}
-  const ctx=choroCanvas.getContext('2d');ctx.clearRect(0,0,CH,CH);
-  if(!document.getElementById('choro').checked)return true;
+  if(!document.getElementById('choro').checked){map.setPaintProperty('countries-fill','fill-color','rgba(0,0,0,0)');return true;}
   const m=document.getElementById('shadeMode').value;let max=0;const vals=new Map();
-  for(const iso of choroPaths.keys()){const v=shadeValue(iso);vals.set(iso,v);if(v>max)max=v;}
-  if(!max)return true;
+  for(const f of COUNTRIES.features){if(!f.iso||vals.has(f.iso))continue;const v=shadeValue(f.iso);vals.set(f.iso,v);if(v>max)max=v;}
+  if(!max){map.setPaintProperty('countries-fill','fill-color','rgba(0,0,0,0)');return true;}
   const ramp=m==='score'?(v)=>d3.interpolateRgb('rgba(217,131,36,0.10)','rgba(160,86,10,0.80)')(Math.pow(v/max,1.6)):m==='changes'?(v)=>d3.interpolateRgb('rgba(176,57,47,0.08)','rgba(176,57,47,0.65)')(Math.log1p(v)/Math.log1p(max)):(v)=>d3.interpolateRgb('rgba(217,131,36,0.05)','rgba(217,131,36,0.34)')(Math.log1p(v)/Math.log1p(max));
-  for(const [iso,v] of vals){if(!v)continue;ctx.fillStyle=ramp(v);for(const path of choroPaths.get(iso))ctx.fill(path,'evenodd');}
+  const expr=['match',['get','iso']];
+  for(const [iso,v] of vals){if(!v)continue;expr.push(iso,ramp(v));}
+  expr.push('rgba(0,0,0,0)');
+  map.setPaintProperty('countries-fill','fill-color',expr.length>3?expr:'rgba(0,0,0,0)');
   return true;
 }
 function countryAt(lngLat){const pt=[lngLat.lng,lngLat.lat];for(const f of COUNTRIES.features){if(f.iso&&COUNTRY_STATS.has(f.iso)&&d3.geoContains(f,pt))return f.iso;}return null;}
@@ -344,16 +345,16 @@ function pushDataNow(){
   linesCoarse=map.getZoom()<3;
   map.getSource('pts').setData(pointsGeoJSON());
   map.getSource('lines').setData(linesGeoJSON());
-  if(paintChoro()){const cs=map.getSource('choro');if(cs){cs.play();requestAnimationFrame(()=>cs.pause());}}
+  paintChoro();
   const choroOnly=MODE==='score';
   for(const l of ['clusters','cluster-count','points','points-ring'])map.setLayoutProperty(l,'visibility',choroOnly?'none':'visible');
   for(const l of ['lines','lines-other'])map.setLayoutProperty(l,'visibility',choroOnly?'none':'visible');
 }
 function addLayers(){
   const firstSymbol=(map.getStyle().layers.find(l=>l.type==='symbol')||{}).id;
+  map.addSource('countries',{type:'geojson',data:COUNTRIES});
+  map.addLayer({id:'countries-fill',type:'fill',source:'countries',paint:{'fill-color':'rgba(0,0,0,0)'}},firstSymbol);
   paintChoro(true);
-  map.addSource('choro',{type:'canvas',canvas:choroCanvas,animate:false,coordinates:[[-180,85.0511],[180,85.0511],[180,-85.0511],[-180,-85.0511]]});
-  map.addLayer({id:'choro',type:'raster',source:'choro',paint:{'raster-fade-duration':0,'raster-opacity':['interpolate',['linear'],['zoom'],3,1,5,0]}},firstSymbol);
   map.addSource('lines',{type:'geojson',data:{type:'FeatureCollection',features:[]},maxzoom:10,buffer:0,tolerance:1.5});
   map.addLayer({id:'lines',type:'line',source:'lines',layout:{'line-cap':'round'},filter:['==',['get','k'],'link'],paint:{
     'line-color':['match',['get','k'],'link','#96691e','foot','#1c7fa0','#7048a0'],
