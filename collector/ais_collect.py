@@ -11,7 +11,7 @@ AIS collector for sanctioned vessels. Runs every 15 minutes in GitHub Actions.
 Env: AISSTREAM_KEY, CF_API_TOKEN (KV write), CF_ACCOUNT_ID, CF_KV_NAMESPACE_ID. Optional: LISTEN_SECONDS (default 90).
 aisstream.io is free for non-commercial use; see their terms before selling this layer.
 """
-import asyncio, json, os, sys, time, urllib.request, urllib.error, datetime as dt
+import asyncio, json, os, re, sys, time, urllib.request, urllib.error, datetime as dt
 
 ROSTER_URL = os.environ.get("ROSTER_URL", "https://raw.githubusercontent.com/flippant-t/Sanction-Scope/main/site/data/vessels.json")
 LISTEN = int(os.environ.get("LISTEN_SECONDS", "90"))
@@ -39,39 +39,65 @@ def load_roster():
         with open("site/data/vessels.json", encoding="utf-8") as f: return json.load(f)
     return json.loads(urllib.request.urlopen(ROSTER_URL, timeout=60).read().decode())
 
-async def listen(watch_mmsi, imo_wanted, imo2mmsi, positions):
+MMSI_RE = re.compile(r'"MMSI":\s*(\d+)')
+
+async def stream(sub, handler, seconds):
+    """Read from aisstream for `seconds`, reconnecting if the server drops us (it drops slow readers)."""
     import websockets
-    sub = {"APIKey": KEY, "BoundingBoxes": [[[-90, -180], [90, 180]]], "FilterMessageTypes": ["PositionReport", "ShipStaticData"]}
-    seen_static = seen_pos = 0
-    t_end = time.time() + LISTEN
-    async with websockets.connect("wss://stream.aisstream.io/v0/stream", max_size=None, open_timeout=30) as ws:
-        await ws.send(json.dumps(sub))
-        first = True
-        while time.time() < t_end:
-            try: raw = await asyncio.wait_for(ws.recv(), timeout=max(1, t_end - time.time()))
-            except asyncio.TimeoutError: break
-            try: m = json.loads(raw)
-            except Exception: continue
-            if first:
-                first = False
-                if isinstance(m, dict) and m.get("error"): sys.exit("FAILED: aisstream.io rejected the subscription: " + str(m["error"]) + " (check AISSTREAM_KEY)")
-                print("connected to aisstream.io, receiving messages")
-            meta = m.get("MetaData", {}); mmsi = str(meta.get("MMSI", "")); mt = m.get("MessageType")
-            if mt == "ShipStaticData":
-                sd = m["Message"]["ShipStaticData"]; imo = str(sd.get("ImoNumber") or "")
-                seen_static += 1
-                if imo in imo_wanted and imo2mmsi.get(imo) != mmsi:
-                    imo2mmsi[imo] = mmsi; watch_mmsi[mmsi] = imo_wanted[imo]
-                if mmsi in watch_mmsi:
-                    p = positions.setdefault(mmsi, {}); p["name"] = (sd.get("Name") or "").strip(); p["dest"] = (sd.get("Destination") or "").strip(); p["type"] = sd.get("Type")
-            elif mt == "PositionReport" and mmsi in watch_mmsi:
-                pr = m["Message"]["PositionReport"]; seen_pos += 1
-                p = positions.setdefault(mmsi, {})
-                ts = meta.get("time_utc", "")[:19]
-                p.update({"lat": round(pr.get("Latitude", 0), 5), "lon": round(pr.get("Longitude", 0), 5), "sog": pr.get("Sog"), "cog": pr.get("Cog"), "hdg": pr.get("TrueHeading"), "nav": pr.get("NavigationalStatus"), "ts": ts, "id": watch_mmsi[mmsi]})
-                tr = p.setdefault("trail", []); 
-                if not tr or tr[-1][2] != ts: tr.append([p["lat"], p["lon"], ts])
-    return seen_static, seen_pos
+    t_end = time.time() + seconds; n = 0
+    while time.time() < t_end:
+        try:
+            async with websockets.connect("wss://stream.aisstream.io/v0/stream", max_size=None, open_timeout=30, ping_interval=None, compression=None) as ws:
+                await ws.send(json.dumps(sub))
+                first = True
+                while time.time() < t_end:
+                    try: raw = await asyncio.wait_for(ws.recv(), timeout=max(1, t_end - time.time()))
+                    except asyncio.TimeoutError: break
+                    if first:
+                        first = False
+                        if raw.startswith('{"error"'): sys.exit("FAILED: aisstream.io rejected the subscription: " + raw[:200] + " (check AISSTREAM_KEY)")
+                        print("connected to aisstream.io")
+                    n += 1; handler(raw)
+        except SystemExit: raise
+        except Exception as e:
+            left = t_end - time.time()
+            if left > 5:
+                print(f"connection dropped ({type(e).__name__}); reconnecting, {int(left)}s left"); await asyncio.sleep(2)
+            else: break
+    return n
+
+async def listen(watch_mmsi, imo_wanted, imo2mmsi, positions):
+    seen = {"static": 0, "pos": 0}
+    def handle(raw):
+        # cheap prefilter: only parse JSON for static data (to learn IMO->MMSI) or for MMSIs we watch
+        m = MMSI_RE.search(raw); mmsi = m.group(1) if m else ""
+        is_static = '"ShipStaticData"' in raw
+        if not is_static and mmsi not in watch_mmsi: return
+        try: msg = json.loads(raw)
+        except Exception: return
+        meta = msg.get("MetaData", {}); mt = msg.get("MessageType")
+        if mt == "ShipStaticData":
+            sd = msg["Message"]["ShipStaticData"]; imo = str(sd.get("ImoNumber") or "")
+            seen["static"] += 1
+            if imo in imo_wanted and imo2mmsi.get(imo) != mmsi:
+                imo2mmsi[imo] = mmsi; watch_mmsi[mmsi] = imo_wanted[imo]
+            if mmsi in watch_mmsi:
+                p = positions.setdefault(mmsi, {}); p["name"] = (sd.get("Name") or "").strip(); p["dest"] = (sd.get("Destination") or "").strip(); p["type"] = sd.get("Type"); p["id"] = watch_mmsi[mmsi]
+        elif mt == "PositionReport" and mmsi in watch_mmsi:
+            pr = msg["Message"]["PositionReport"]; seen["pos"] += 1
+            p = positions.setdefault(mmsi, {}); ts = meta.get("time_utc", "")[:19]
+            p.update({"lat": round(pr.get("Latitude", 0), 5), "lon": round(pr.get("Longitude", 0), 5), "sog": pr.get("Sog"), "cog": pr.get("Cog"), "hdg": pr.get("TrueHeading"), "nav": pr.get("NavigationalStatus"), "ts": ts, "id": watch_mmsi[mmsi]})
+            tr = p.setdefault("trail", [])
+            if not tr or tr[-1][2] != ts: tr.append([p["lat"], p["lon"], ts])
+    # phase 1: worldwide static data only (a small fraction of traffic) to learn IMO -> MMSI
+    n1 = await stream({"APIKey": KEY, "BoundingBoxes": [[[-90, -180], [90, 180]]], "FilterMessageTypes": ["ShipStaticData"]}, handle, max(20, LISTEN // 3))
+    # phase 2: only the vessels we watch, positions and static data
+    n2 = 0
+    if watch_mmsi:
+        mm = list(watch_mmsi)[:5000]
+        n2 = await stream({"APIKey": KEY, "BoundingBoxes": [[[-90, -180], [90, 180]]], "FiltersShipMMSI": mm, "FilterMessageTypes": ["PositionReport", "ShipStaticData"]}, handle, LISTEN - LISTEN // 3)
+    print(f"messages read: {n1} static-phase, {n2} watch-phase")
+    return seen["static"], seen["pos"]
 
 def main():
     missing = [k for k, v in {"AISSTREAM_KEY": KEY, "CF_API_TOKEN": CF["token"], "CF_ACCOUNT_ID": CF["acct"], "CF_KV_NAMESPACE_ID": CF["ns"]}.items() if not v]
