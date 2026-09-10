@@ -688,8 +688,10 @@ def main():
     n_prog, n_cc, n_party = pages.build_pages(args.site_url)
     print(f"static pages: {n_prog} programs, {n_cc} countries, {n_party} parties" + (", sitemap written" if args.site_url else ", no --site-url so no sitemap"))
     import api
-    n_api, n_sh = api.build_api(args.site_url)
-    print(f"api: {n_api} parties in {n_sh} shards under site/api/v1/")
+    res = api.build_api(args.site_url)
+    n_api, n_sh = res[0], res[1]
+    n_search = res[2] if len(res) > 2 else 0
+    print(f"api: {n_api} parties in {n_sh} record shards and {n_search} search shards under site/api/v1/")
 
 if __name__ == "__main__":
     main()
