@@ -287,11 +287,23 @@ function update(){
 function pointsGeoJSON(){
   return {type:'FeatureCollection',features:VISIBLE.map(p=>({type:'Feature',geometry:{type:'Point',coordinates:[p.x,p.y]},properties:{id:p.id,col:pcolor(p),inf:p.inf?1:0,multi:p.au.length>1?1:0,sel:p===selected?1:0,nb:selected&&p.edges.some(e=>e.a===selected||e.b===selected)?1:0}}))};
 }
+// Drawing all 16,000 arcs at world view is unreadable and slow. Below zoom 3 the map shows the
+// backbone instead: the edges joining the best-connected parties, which is what the shape of the
+// network actually is. Zoom in, or select a party, and every line in view is drawn.
+const WORLD_LINES=1200;
 function linesGeoJSON(){
   const feats=[];const focus=!!selected;
-  if(map.getZoom()<3&&!selected)return {type:'FeatureCollection',features:feats};
-  const coarse=false;
-  for(const e of VEDGES){
+  const z=map.getZoom();
+  let edges=VEDGES;
+  if(z<3&&!selected){
+    edges=VEDGES.filter(e=>e.k==='link');
+    if(edges.length>WORLD_LINES){
+      for(const e of edges)if(e.w===undefined)e.w=(e.a.edges?e.a.edges.length:0)+(e.b&&e.b.edges?e.b.edges.length:0);
+      edges=edges.slice().sort((x,y)=>y.w-x.w).slice(0,WORLD_LINES);
+    }
+  }
+  const coarse=z<3;
+  for(const e of edges){
     const isF=selected&&(e.a===selected||e.b===selected);
     // At world view the arcs only need a few vertices each, which keeps the geometry the renderer
     // has to tile roughly four times smaller without any visible difference at that scale.
@@ -308,37 +320,16 @@ function shadeValue(iso){const m=document.getElementById('shadeMode').value;if(m
 // The country shading is painted onto one canvas in Web Mercator and shown as a single texture,
 // so it never depends on tiles. Country hit-testing is done in JS with d3.geoContains.
 const CH=2560;let choroCanvas=null,choroPaths=null;
-const LH=CH;
-const LINE_COL={link:'rgba(150,105,30,',foot:'rgba(28,127,160,',nat:'rgba(112,72,160,'};
-function mercXY_L(lon,lat){const la=Math.max(-85.0511,Math.min(85.0511,lat));return [(lon+180)/360*LH,(1-Math.log(Math.tan(la*Math.PI/180)+1/Math.cos(la*Math.PI/180))/Math.PI)/2*LH];}
-function paintLines(ctx){
-  if(!VEDGES.length||MODE==='score')return;
-  ctx.lineWidth=1.5;ctx.lineJoin='round';ctx.lineCap='round';
-  for(const kind of ['nat','foot','link']){
-    ctx.strokeStyle=LINE_COL[kind]+'0.13)';
-    ctx.beginPath();
-    for(const e of VEDGES){
-      if(e.k!==kind)continue;
-      for(const seg of e.segs){
-        if(seg.length<2)continue;
-        let first=true;
-        for(const c of seg){const [x,y]=mercXY_L(c[0],c[1]);first?ctx.moveTo(x,y):ctx.lineTo(x,y);first=false;}
-      }
-    }
-    ctx.stroke();
-  }
-}
 function mercXY(lon,lat){const la=Math.max(-85.0511,Math.min(85.0511,lat));return [(lon+180)/360*CH,(1-Math.log(Math.tan(la*Math.PI/180)+1/Math.cos(la*Math.PI/180))/Math.PI)/2*CH];}
 function buildChoroPaths(){choroPaths=new Map();for(const f of COUNTRIES.features){if(!f.iso)continue;const path=new Path2D();for(const pg of f.geometry.coordinates){for(const ring of pg){ring.forEach((c,i)=>{const [x,y]=mercXY(c[0],c[1]);i?path.lineTo(x,y):path.moveTo(x,y);});path.closePath();}}
   if(!choroPaths.has(f.iso))choroPaths.set(f.iso,[]);choroPaths.get(f.iso).push(path);}}
 let texSig='';
 function paintChoro(force){
-  const sig=[MODE,document.getElementById('choro').checked,document.getElementById('shadeMode').value,VEDGES.length,VISIBLE.length].join('|');
+  const sig=[MODE,document.getElementById('choro').checked,document.getElementById('shadeMode').value,VISIBLE.length].join('|');
   if(!force&&sig===texSig&&choroCanvas)return false;      // nothing the texture depends on has changed
   texSig=sig;
   if(!choroCanvas){choroCanvas=document.createElement('canvas');choroCanvas.width=choroCanvas.height=CH;buildChoroPaths();}
   const ctx=choroCanvas.getContext('2d');ctx.clearRect(0,0,CH,CH);
-  paintLines(ctx);
   if(!document.getElementById('choro').checked)return true;
   const m=document.getElementById('shadeMode').value;let max=0;const vals=new Map();
   for(const iso of choroPaths.keys()){const v=shadeValue(iso);vals.set(iso,v);if(v>max)max=v;}
@@ -356,8 +347,7 @@ function pushDataNow(){
   if(paintChoro()){const cs=map.getSource('choro');if(cs){cs.play();requestAnimationFrame(()=>cs.pause());}}
   const choroOnly=MODE==='score';
   for(const l of ['clusters','cluster-count','points','points-ring'])map.setLayoutProperty(l,'visibility',choroOnly?'none':'visible');
-  const vectorLines=map.getZoom()>=3;
-  for(const l of ['lines','lines-other'])map.setLayoutProperty(l,'visibility',vectorLines&&!choroOnly?'visible':'none');
+  for(const l of ['lines','lines-other'])map.setLayoutProperty(l,'visibility',choroOnly?'none':'visible');
 }
 function addLayers(){
   const firstSymbol=(map.getStyle().layers.find(l=>l.type==='symbol')||{}).id;
@@ -368,7 +358,7 @@ function addLayers(){
   map.addLayer({id:'lines',type:'line',source:'lines',layout:{'line-cap':'round'},filter:['==',['get','k'],'link'],paint:{
     'line-color':['match',['get','k'],'link','#96691e','foot','#1c7fa0','#7048a0'],
     'line-width':['case',['==',['get','f'],1],1.8,0.7],
-    'line-opacity':['interpolate',['linear'],['zoom'],1,['case',['==',['get','f'],1],0.95,['==',['get','dim'],1],0.03,0.13],4,['case',['==',['get','f'],1],0.95,['==',['get','dim'],1],0.05,0.3],8,['case',['==',['get','f'],1],1,['==',['get','dim'],1],0.04,0.16]],
+    'line-opacity':['interpolate',['linear'],['zoom'],1,['case',['==',['get','f'],1],0.95,['==',['get','dim'],1],0.04,0.34],4,['case',['==',['get','f'],1],0.95,['==',['get','dim'],1],0.05,0.3],8,['case',['==',['get','f'],1],1,['==',['get','dim'],1],0.04,0.16]],
     }});
   map.addLayer({id:'lines-other',type:'line',source:'lines',filter:['!=',['get','k'],'link'],paint:{
     'line-color':['match',['get','k'],'foot','#1c7fa0','#7048a0'],'line-width':['case',['==',['get','f'],1],1.6,0.7],'line-dasharray':[3,2],
@@ -386,7 +376,7 @@ function addLayers(){
   map.addLayer({id:'cluster-count',type:'symbol',source:'pts',filter:['all',['has','point_count'],['>=',['get','point_count'],25]],
     layout:{'text-field':['get','point_count_abbreviated'],'text-size':['interpolate',['linear'],['sqrt',['get','point_count']],4,9,32,11,80,13],
       'text-font':['Noto Sans Regular'],'text-allow-overlap':false,'text-ignore-placement':false,'text-padding':2},
-    paint:{'text-color':'#2b1c02','text-halo-color':'#ffffff','text-halo-width':1.4}});
+    paint:{'text-color':'#3d2707','text-halo-color':'rgba(255,255,255,0.45)','text-halo-width':0.6,'text-halo-blur':0.6}});
   map.addLayer({id:'points',type:'circle',source:'pts',filter:['!',['has','point_count']],paint:{
     'circle-color':['get','col'],'circle-radius':['interpolate',['linear'],['zoom'],3,2.5,8,4.5,14,7],
     'circle-opacity':['case',['==',['get','inf'],1],0,['==',['get','sel'],1],1,0.9],
@@ -401,7 +391,7 @@ function addLayers(){
   map.on('mouseenter','ais',()=>map.getCanvas().style.cursor='pointer');map.on('mouseleave','ais',()=>{map.getCanvas().style.cursor='';popup.remove();});
   map.on('mousemove','ais',e=>{const f=e.features[0].properties;popup.setLngLat(e.features[0].geometry.coordinates).setHTML(`<b>${esc(f.name)}</b><br><span style="color:#a8a294">${esc(f.when)} · ${f.sog!=null?f.sog+' kn':''} ${f.dest?'· to '+esc(f.dest):''}</span>`).addTo(map);});
   styleReady=true;
-  map.on('zoomend',()=>{const c=map.getZoom()<3;if(c!==linesCoarse){linesCoarse=c;pushDataNow();}});
+  map.on('zoomend',()=>{const c=map.getZoom()<3;if(c!==linesCoarse){linesCoarse=c;map.getSource('lines').setData(linesGeoJSON());}});
   map.on('click','clusters',e=>{const f=e.features[0];map.getSource('pts').getClusterExpansionZoom(f.properties.cluster_id).then(z=>map.easeTo({center:f.geometry.coordinates,zoom:Math.min(14,Math.max(z,map.getZoom()+2.2)),duration:700}));});
   map.on('click','points',e=>{const p=BYID.get(e.features[0].properties.id);if(p)select(p,false);});
   map.on('click',e=>{const hit=map.queryRenderedFeatures(e.point,{layers:['points','clusters']});if(hit.length)return;const iso=(MODE==='score'||map.getZoom()<3)?countryAt(e.lngLat):null;if(iso){openCountry(iso);return;}if(selected){selected=null;closeDrawer();pushData();writeURL();}});
@@ -424,7 +414,7 @@ async function loadStyle(){
       if(l.type==='background'){l.paint['background-color']='#cfe0f0';continue;}
       if(l.type==='fill'){l.paint['fill-color']=water.test(l.id)?'#aacce8':bld.test(l.id)?'#e9e3d6':green.test(l.id)?'#eaeee1':'#f5f1e7';delete l.paint['fill-pattern'];continue;}
       if(l.type==='line'){l.paint['line-color']=boundary.test(l.id)?'#c3b9a7':water.test(l.id)?'#bcd3e8':'#e2dcd0';continue;}
-      if(l.type==='symbol'){l.paint['text-color']=water.test(l.id)?'#6f8ba8':'#5b6472';l.paint['text-halo-color']='#ffffff';l.paint['text-halo-width']=1.2;continue;}
+      if(l.type==='symbol'){l.paint['text-color']=water.test(l.id)?'#6f8ba8':'#5b6472';l.paint['text-halo-color']='rgba(255,255,255,0.6)';l.paint['text-halo-width']=0.9;l.paint['text-halo-blur']=0.6;continue;}
     }
     st.sources.landimg={type:'image',url:'vendor/land-physical-v2.png',coordinates:[[-180,85.0511],[180,85.0511],[180,-85.0511],[-180,-85.0511]]};
     st.layers.splice(1,0,{id:'landimg',type:'raster',source:'landimg',paint:{'raster-opacity':1,'raster-fade-duration':0}});
@@ -437,7 +427,7 @@ function addCountryLabels(){
   const feats=[];for(const [iso,base] of centroidByISO){const n=nameByISO[iso];if(!n||!COUNTRY_STATS.has(iso))continue;feats.push({type:'Feature',geometry:{type:'Point',coordinates:base},properties:{n:n.toUpperCase(),big:COUNTRY_STATS.get(iso).n>300?1:0}});}
   map.addSource('clabels',{type:'geojson',data:{type:'FeatureCollection',features:feats}});
   const font=(map.getStyle().glyphs||'').includes('openfreemap')?['Noto Sans Regular']:['Open Sans Semibold'];
-  map.addLayer({id:'clabels',type:'symbol',source:'clabels',maxzoom:4.5,layout:{'text-field':['get','n'],'text-font':font,'text-size':['interpolate',['linear'],['zoom'],1,8,4,12],'text-letter-spacing':0.12,'text-allow-overlap':false},paint:{'text-color':'#7b8494','text-halo-color':'#ffffff','text-halo-width':1.4}},'lines');
+  map.addLayer({id:'clabels',type:'symbol',source:'clabels',maxzoom:4.5,layout:{'text-field':['get','n'],'text-font':font,'text-size':['interpolate',['linear'],['zoom'],1,8,4,12],'text-letter-spacing':0.12,'text-allow-overlap':false},paint:{'text-color':'#54606f','text-halo-color':'rgba(255,255,255,0.55)','text-halo-width':0.9,'text-halo-blur':0.8}},'lines');
 }
 
 // ============================================================ live AIS
