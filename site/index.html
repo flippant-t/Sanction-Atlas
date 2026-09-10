@@ -353,7 +353,7 @@ function addLayers(){
   const firstSymbol=(map.getStyle().layers.find(l=>l.type==='symbol')||{}).id;
   paintChoro(true);
   map.addSource('choro',{type:'canvas',canvas:choroCanvas,animate:false,coordinates:[[-180,85.0511],[180,85.0511],[180,-85.0511],[-180,-85.0511]]});
-  map.addLayer({id:'choro',type:'raster',source:'choro',paint:{'raster-fade-duration':0}},firstSymbol);
+  map.addLayer({id:'choro',type:'raster',source:'choro',paint:{'raster-fade-duration':0,'raster-opacity':['interpolate',['linear'],['zoom'],3,1,5,0]}},firstSymbol);
   map.addSource('lines',{type:'geojson',data:{type:'FeatureCollection',features:[]},maxzoom:10,buffer:0,tolerance:1.5});
   map.addLayer({id:'lines',type:'line',source:'lines',layout:{'line-cap':'round'},filter:['==',['get','k'],'link'],paint:{
     'line-color':['match',['get','k'],'link','#96691e','foot','#1c7fa0','#7048a0'],
