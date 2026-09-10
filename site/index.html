@@ -118,7 +118,8 @@
         <label><input type="radio" name="mode" value="changes">Activity<small>recent additions</small></label>
         <label><input type="radio" name="mode" value="compare">Authorities<small>where lists agree</small></label>
       </div>
-      <div class="muted" id="showing" style="margin-top:8px"></div>
+      <label class="chk" style="margin-top:8px"><input type="checkbox" id="lnMaster" checked>Show connections between parties</label>
+      <div class="muted" id="showing" style="margin-top:4px"></div>
       <div id="modeOpts">
         <select id="cmp" class="search" style="padding:5px 8px;font-size:12px;margin-top:6px;display:none"><option value="">Compare two authorities…</option></select>
         <div class="muted" id="cmpNote" style="margin-top:6px;display:none"></div>
@@ -287,7 +288,8 @@ function pointsGeoJSON(){
 }
 function linesGeoJSON(){
   const feats=[];const focus=!!selected;
-  const z=map.getZoom(), coarse=z<3;
+  if(map.getZoom()<3&&!selected)return {type:'FeatureCollection',features:feats};
+  const coarse=false;
   for(const e of VEDGES){
     const isF=selected&&(e.a===selected||e.b===selected);
     // At world view the arcs only need a few vertices each, which keeps the geometry the renderer
@@ -304,19 +306,45 @@ function linesGeoJSON(){
 function shadeValue(iso){const m=document.getElementById('shadeMode').value;if(m==='parties')return countryCounts.get(iso)||0;const c=COUNTRY_STATS.get(iso);if(!c)return 0;return m==='programs'?c.progs.size:m==='changes'?c.ch:c.score;}
 // The country shading is painted onto one canvas in Web Mercator and shown as a single texture,
 // so it never depends on tiles. Country hit-testing is done in JS with d3.geoContains.
-const CH=2048;let choroCanvas=null,choroPaths=null;
+const CH=2560;let choroCanvas=null,choroPaths=null;
+const LH=CH;
+const LINE_COL={link:'rgba(240,217,166,',foot:'rgba(95,184,196,',nat:'rgba(177,143,217,'};
+function mercXY_L(lon,lat){const la=Math.max(-85.0511,Math.min(85.0511,lat));return [(lon+180)/360*LH,(1-Math.log(Math.tan(la*Math.PI/180)+1/Math.cos(la*Math.PI/180))/Math.PI)/2*LH];}
+function paintLines(ctx){
+  if(!VEDGES.length||MODE==='score')return;
+  ctx.lineWidth=1.5;ctx.lineJoin='round';ctx.lineCap='round';
+  for(const kind of ['nat','foot','link']){
+    ctx.strokeStyle=LINE_COL[kind]+'0.16)';
+    ctx.beginPath();
+    for(const e of VEDGES){
+      if(e.k!==kind)continue;
+      for(const seg of e.segs){
+        if(seg.length<2)continue;
+        let first=true;
+        for(const c of seg){const [x,y]=mercXY_L(c[0],c[1]);first?ctx.moveTo(x,y):ctx.lineTo(x,y);first=false;}
+      }
+    }
+    ctx.stroke();
+  }
+}
 function mercXY(lon,lat){const la=Math.max(-85.0511,Math.min(85.0511,lat));return [(lon+180)/360*CH,(1-Math.log(Math.tan(la*Math.PI/180)+1/Math.cos(la*Math.PI/180))/Math.PI)/2*CH];}
 function buildChoroPaths(){choroPaths=new Map();for(const f of COUNTRIES.features){if(!f.iso)continue;const path=new Path2D();for(const pg of f.geometry.coordinates){for(const ring of pg){ring.forEach((c,i)=>{const [x,y]=mercXY(c[0],c[1]);i?path.lineTo(x,y):path.moveTo(x,y);});path.closePath();}}
   if(!choroPaths.has(f.iso))choroPaths.set(f.iso,[]);choroPaths.get(f.iso).push(path);}}
-function paintChoro(){
+let texSig='';
+function paintChoro(force){
+  const sig=[MODE,document.getElementById('choro').checked,document.getElementById('shadeMode').value,VEDGES.length,VISIBLE.length].join('|');
+  if(!force&&sig===texSig&&choroCanvas)return false;      // nothing the texture depends on has changed
+  texSig=sig;
   if(!choroCanvas){choroCanvas=document.createElement('canvas');choroCanvas.width=choroCanvas.height=CH;buildChoroPaths();}
   const ctx=choroCanvas.getContext('2d');ctx.clearRect(0,0,CH,CH);
-  if(!document.getElementById('choro').checked)return;
+  paintLines(ctx);
+  if(!document.getElementById('choro').checked)return true;
   const m=document.getElementById('shadeMode').value;let max=0;const vals=new Map();
   for(const iso of choroPaths.keys()){const v=shadeValue(iso);vals.set(iso,v);if(v>max)max=v;}
-  if(!max)return;
+  if(!max)return true;
   const ramp=m==='score'?(v)=>d3.interpolateRgb('rgba(233,180,76,0.05)','rgba(217,151,58,0.75)')(Math.pow(v/max,1.6)):m==='changes'?(v)=>d3.interpolateRgb('rgba(224,122,122,0.04)','rgba(224,122,122,0.6)')(Math.log1p(v)/Math.log1p(max)):(v)=>d3.interpolateRgb('rgba(233,180,76,0.02)','rgba(233,180,76,0.26)')(Math.log1p(v)/Math.log1p(max));
   for(const [iso,v] of vals){if(!v)continue;ctx.fillStyle=ramp(v);for(const path of choroPaths.get(iso))ctx.fill(path,'evenodd');}
+  return true;
 }
 function countryAt(lngLat){const pt=[lngLat.lng,lngLat.lat];for(const f of COUNTRIES.features){if(f.iso&&COUNTRY_STATS.has(f.iso)&&d3.geoContains(f,pt))return f.iso;}return null;}
 function pushData(){if(!styleReady)return;clearTimeout(pushTimer);pushTimer=setTimeout(pushDataNow,30);}
@@ -324,13 +352,15 @@ function pushDataNow(){
   linesCoarse=map.getZoom()<3;
   map.getSource('pts').setData(pointsGeoJSON());
   map.getSource('lines').setData(linesGeoJSON());
-  paintChoro();const cs=map.getSource('choro');if(cs){cs.play();requestAnimationFrame(()=>cs.pause());}
+  if(paintChoro()){const cs=map.getSource('choro');if(cs){cs.play();requestAnimationFrame(()=>cs.pause());}}
   const choroOnly=MODE==='score';
-  for(const l of ['clusters','cluster-count','points','points-ring','lines','lines-other'])map.setLayoutProperty(l,'visibility',choroOnly?'none':'visible');
+  for(const l of ['clusters','cluster-count','points','points-ring'])map.setLayoutProperty(l,'visibility',choroOnly?'none':'visible');
+  const vectorLines=map.getZoom()>=3;
+  for(const l of ['lines','lines-other'])map.setLayoutProperty(l,'visibility',vectorLines&&!choroOnly?'visible':'none');
 }
 function addLayers(){
   const firstSymbol=(map.getStyle().layers.find(l=>l.type==='symbol')||{}).id;
-  paintChoro();
+  paintChoro(true);
   map.addSource('choro',{type:'canvas',canvas:choroCanvas,animate:false,coordinates:[[-180,85.0511],[180,85.0511],[180,-85.0511],[-180,-85.0511]]});
   map.addLayer({id:'choro',type:'raster',source:'choro',paint:{'raster-fade-duration':0}},firstSymbol);
   map.addSource('lines',{type:'geojson',data:{type:'FeatureCollection',features:[]},maxzoom:10,buffer:0,tolerance:1.5});
@@ -370,7 +400,7 @@ function addLayers(){
   map.on('mouseenter','ais',()=>map.getCanvas().style.cursor='pointer');map.on('mouseleave','ais',()=>{map.getCanvas().style.cursor='';popup.remove();});
   map.on('mousemove','ais',e=>{const f=e.features[0].properties;popup.setLngLat(e.features[0].geometry.coordinates).setHTML(`<b>${esc(f.name)}</b><br><span style="color:#a8a294">${esc(f.when)} · ${f.sog!=null?f.sog+' kn':''} ${f.dest?'· to '+esc(f.dest):''}</span>`).addTo(map);});
   styleReady=true;
-  map.on('zoomend',()=>{const c=map.getZoom()<3;if(c!==linesCoarse){linesCoarse=c;map.getSource('lines').setData(linesGeoJSON());}});
+  map.on('zoomend',()=>{const c=map.getZoom()<3;if(c!==linesCoarse){linesCoarse=c;pushDataNow();}});
   map.on('click','clusters',e=>{const f=e.features[0];map.getSource('pts').getClusterExpansionZoom(f.properties.cluster_id).then(z=>map.easeTo({center:f.geometry.coordinates,zoom:Math.min(14,Math.max(z,map.getZoom()+2.2)),duration:700}));});
   map.on('click','points',e=>{const p=BYID.get(e.features[0].properties.id);if(p)select(p,false);});
   map.on('click',e=>{const hit=map.queryRenderedFeatures(e.point,{layers:['points','clusters']});if(hit.length)return;const iso=(MODE==='score'||map.getZoom()<3)?countryAt(e.lngLat):null;if(iso){openCountry(iso);return;}if(selected){selected=null;closeDrawer();pushData();writeURL();}});
@@ -482,6 +512,12 @@ document.getElementById('progQ').addEventListener('input',renderProgs);
 document.getElementById('progAll').onclick=()=>{filters.prog=new Set(META.programs.map((_,i)=>i));renderProgs();update();};
 document.getElementById('progNone').onclick=()=>{filters.prog=new Set();renderProgs();update();};
 ['lnLink','lnFoot','lnNat','onlyLinked','choro'].forEach(id=>document.getElementById(id).addEventListener('change',update));
+// One switch for all three line kinds, so connections can be turned off without opening Advanced filters.
+document.getElementById('lnMaster').addEventListener('change',e=>{
+  for(const id of ['lnLink','lnFoot','lnNat'])document.getElementById(id).checked=e.target.checked;
+  update();});
+for(const id of ['lnLink','lnFoot','lnNat'])document.getElementById(id).addEventListener('change',()=>{
+  document.getElementById('lnMaster').checked=['lnLink','lnFoot','lnNat'].some(x=>document.getElementById(x).checked);});
 document.getElementById('shadeMode').addEventListener('change',update);
 const yrEl=document.getElementById('yr');
 yrEl.addEventListener('input',()=>{YEAR=+yrEl.value;document.getElementById('yrLabel').textContent=YEAR;update();});
