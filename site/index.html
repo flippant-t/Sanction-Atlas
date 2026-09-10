@@ -296,7 +296,7 @@ function fillExpression(){
   for(const f of COUNTRIES.features){if(!f.iso)continue;const v=shadeValue(f.iso);vals[f.iso]=v;if(v>max)max=v;}
   if(!max)return 'rgba(0,0,0,0)';
   const entries=['match',['get','iso']];
-  const ramp=m==='score'?(v)=>d3.interpolateRgb('rgba(233,180,76,0.05)','rgba(217,151,58,0.75)')(Math.pow(v/max,1.6)):m==='changes'?(v)=>d3.interpolateRgb('rgba(224,122,122,0.04)','rgba(224,122,122,0.6)')(Math.log1p(v)/Math.log1p(max)):(v)=>d3.interpolateRgb('rgba(233,180,76,0.03)','rgba(233,180,76,0.42)')(Math.log1p(v)/Math.log1p(max));
+  const ramp=m==='score'?(v)=>d3.interpolateRgb('rgba(233,180,76,0.05)','rgba(217,151,58,0.75)')(Math.pow(v/max,1.6)):m==='changes'?(v)=>d3.interpolateRgb('rgba(224,122,122,0.04)','rgba(224,122,122,0.6)')(Math.log1p(v)/Math.log1p(max)):(v)=>d3.interpolateRgb('rgba(233,180,76,0.02)','rgba(233,180,76,0.26)')(Math.log1p(v)/Math.log1p(max));
   for(const [iso,v] of Object.entries(vals)){if(!v)continue;entries.push(iso,ramp(v));}
   entries.push('rgba(0,0,0,0)');return entries.length>3?entries:'rgba(0,0,0,0)';
 }
@@ -359,18 +359,29 @@ async function loadStyle(){
   try{
     const r=await fetch('https://tiles.openfreemap.org/styles/positron',{signal:AbortSignal.timeout(8000)});if(!r.ok)throw 0;const st=await r.json();
     st.projection={type:'globe'};
+    // Land is a single pre-rendered image (always resident, no tiles); OpenFreeMap detail only appears from zoom 4
+    for(const l of st.layers){if(l.type!=='background'){l.minzoom=Math.max(l.minzoom||0,4);}}
     const water=/water|ocean|sea|lake|river/i, road=/road|highway|motorway|street|path|rail|bridge|tunnel|transit|aeroway|runway/i, bld=/building/i, boundary=/boundary|admin|border/i, green=/park|wood|forest|grass|landcover|landuse|glacier|scrub|farmland|cemetery|pitch|ice/i;
     for(const l of st.layers){
       l.paint=l.paint||{};
-      if(l.type==='background'){l.paint['background-color']='#101b2d';continue;}
+      if(l.type==='background'){l.paint['background-color']='#0b1321';continue;}
       if(l.type==='fill'){l.paint['fill-color']=water.test(l.id)?'#0b1321':bld.test(l.id)?'#1a2740':green.test(l.id)?'#152239':'#152036';l.paint['fill-outline-color']=water.test(l.id)?'#0b1321':'#1d2b45';delete l.paint['fill-pattern'];continue;}
       if(l.type==='line'){l.paint['line-color']=boundary.test(l.id)?'#3a4d69':water.test(l.id)?'#0f1a2b':road.test(l.id)?'#25344d':'#22304a';continue;}
       if(l.type==='symbol'){l.paint['text-color']=water.test(l.id)?'#3f5a7a':'#a8a294';l.paint['text-halo-color']='#0b1321';l.paint['text-halo-width']=1.2;if(l.paint['icon-color'])l.paint['icon-color']='#a8a294';continue;}
       if(l.type==='fill-extrusion'){l.paint['fill-extrusion-color']='#1a2740';}
     }
+    st.sources.landimg={type:'image',url:'vendor/land-mercator.png',coordinates:[[-180,85.0511],[180,85.0511],[180,-85.0511],[-180,-85.0511]]};
+    st.layers.splice(1,0,{id:'landimg',type:'raster',source:'landimg',paint:{'raster-opacity':1,'raster-fade-duration':0}});
     return st;
   }catch(e){console.warn('basemap unavailable, drawing plain land',e);
-    return {version:8,projection:{type:'globe'},glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',sources:{},layers:[{id:'bg',type:'background',paint:{'background-color':'#0b1321'}}],metadata:{fallback:true}};}
+    return {version:8,projection:{type:'globe'},glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',sources:{landimg:{type:'image',url:'vendor/land-mercator.png',coordinates:[[-180,85.0511],[180,85.0511],[180,-85.0511],[-180,-85.0511]]}},layers:[{id:'bg',type:'background',paint:{'background-color':'#0b1321'}},{id:'landimg',type:'raster',source:'landimg',paint:{'raster-fade-duration':0}}],metadata:{fallback:true}};}
+}
+
+function addCountryLabels(){
+  const feats=[];for(const [iso,base] of centroidByISO){const n=nameByISO[iso];if(!n||!COUNTRY_STATS.has(iso))continue;feats.push({type:'Feature',geometry:{type:'Point',coordinates:base},properties:{n:n.toUpperCase(),big:COUNTRY_STATS.get(iso).n>300?1:0}});}
+  map.addSource('clabels',{type:'geojson',data:{type:'FeatureCollection',features:feats}});
+  const font=(map.getStyle().glyphs||'').includes('openfreemap')?['Noto Sans Regular']:['Open Sans Semibold'];
+  map.addLayer({id:'clabels',type:'symbol',source:'clabels',maxzoom:4.5,layout:{'text-field':['get','n'],'text-font':font,'text-size':['interpolate',['linear'],['zoom'],1,8,4,12],'text-letter-spacing':0.12,'text-allow-overlap':false},paint:{'text-color':'#7f8aa0','text-halo-color':'#0b1321','text-halo-width':1}},'countries-fill');
 }
 
 // ============================================================ live AIS
@@ -664,11 +675,11 @@ async function boot(){
   document.getElementById('stamp').innerHTML=`<b>${META.parties.toLocaleString()}</b> parties from ${okA.length} authorities (${okA.join(', ')})${META.multi_listed?`, ${META.multi_listed.toLocaleString()} on more than one list`:''}.${failA.length?` <span class="minus">${failA.join(', ')} failed to load this build.</span>`:''} ${META.with_city.toLocaleString()} placed to a city. Updated ${new Date(META.built).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}.`+(CHANGES.series&&CHANGES.series.length>1?` Last build: <span class="plus">+${META.added_today}</span> <span class="minus">−${META.removed_today}</span>.`:'');
   document.getElementById('navstamp').textContent=`${META.parties.toLocaleString()} parties · updated ${new Date(META.built).toLocaleDateString(undefined,{month:'short',day:'numeric'})}`;
   renderStories();renderFeed();
-  map=new maplibregl.Map({container:'map',style,center:[25,25],zoom:1.6,minZoom:0.8,maxZoom:16,attributionControl:{compact:true}});
+  map=new maplibregl.Map({container:'map',style,center:[25,25],zoom:1.6,minZoom:0.8,maxZoom:16,attributionControl:{compact:true},fadeDuration:0,maxTileCacheSize:6000,refreshExpiredTiles:false});map.setPrefetchZoomDelta?map.setPrefetchZoomDelta(6):null;
   document.getElementById('globeBtn').classList.add('on');
   map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-left');
   popup=new maplibregl.Popup({closeButton:false,closeOnClick:false,offset:8});
-  let setupDone=false;const onLoad=()=>{if(setupDone)return;setupDone=true;try{if(style.metadata&&style.metadata.fallback){map.addSource('land',{type:'geojson',data:COUNTRIES});map.addLayer({id:'land',type:'fill',source:'land',paint:{'fill-color':'#152036'}});}addLayers();readURL();}catch(e){console.error('setup failed',e);toast('Map setup failed: '+e.message);}loadingEl.style.display='none';};
+  let setupDone=false;const onLoad=()=>{if(setupDone)return;setupDone=true;try{addLayers();addCountryLabels();readURL();}catch(e){console.error('setup failed',e);toast('Map setup failed: '+e.message);}loadingEl.style.display='none';};
   map.once('load',onLoad);const poll=setInterval(()=>{if(setupDone){clearInterval(poll);return;}if(map.isStyleLoaded()){map.triggerRepaint();if(map.loaded())onLoad();}},500);
   map.on('error',e=>{console.warn('map error',e&&e.error&&e.error.message);});
   window.__ss={get AIS(){return AIS},get map(){return map},get VISIBLE(){return VISIBLE},get PARTIES(){return PARTIES},get filters(){return filters},get MODE(){return MODE},get compare(){return compare},select,openCountry,setMode,update,centroidByISO};
