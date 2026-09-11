@@ -195,6 +195,10 @@ def geocode(addr):
 
 # ------------------------------------------------------------------ parsing
 AUTH_ORDER = ["US", "EU", "UK", "UN", "AU", "CA"]
+# When one entity sits on several US lists, the merged party takes its id from the highest-ranked list.
+# Without a fixed rank the id came from whichever row the download listed first, so ids flipped between builds.
+SOURCE_RANK = {"OFAC SDN": 0, "OFAC other": 1, "BIS Entity List": 2, "BIS other": 3, "State / other": 4}
+def source_rank(key): return SOURCE_RANK.get(key, 5)
 def source_key(s, auth="US"):
     if auth != "US": return auth
     t = (s or "").lower()
@@ -224,10 +228,9 @@ def load_rows(args):
             rows = list(csv.DictReader(f))
         status["US"] = {"ok": True, "n": len(rows), "error": ""}
     else:
-        import requests
-        r = requests.get(CSL_URL, timeout=180, headers={"User-Agent": "sanctionscope-build"})
-        r.raise_for_status()
-        rows = list(csv.DictReader(io.StringIO(r.content.decode("utf-8-sig"))))
+        import sources
+        raw = sources.get_with_retries(CSL_URL, {"User-Agent": "sanctionscope-build"}, timeout=180)
+        rows = list(csv.DictReader(io.StringIO(raw.decode("utf-8-sig"))))
         status["US"] = {"ok": True, "n": len(rows), "error": ""}
     for r in rows: r.setdefault("authority", "US")   # a local CSV may carry an authority column (testing)
     if not args.us_only:
@@ -355,13 +358,13 @@ def merge_across_authorities(parties):
     for i in range(len(parties)): groups.setdefault(find(i), []).append(i)
     merged = []
     for root, idxs in groups.items():
-        members = sorted((parties[i] for i in idxs), key=lambda p: AUTH_ORDER.index(p["au"][0]))
+        members = sorted((parties[i] for i in idxs), key=lambda p: (AUTH_ORDER.index(p["au"][0]), source_rank(p["s"]), p["id"]))
         base = members[0]
         if len(members) == 1:
             merged.append(base); continue
         for m in members[1:]:
             if m["au"][0] not in base["au"]: base["au"].append(m["au"][0])
-            base["recs"] += m["recs"]
+            base["recs"] += m["recs"]; base["rids"] += m["rids"]
             base["p"] = sorted(set(base["p"]) | set(m["p"]))
             have = {norm(x["raw"]) for x in base["a"]}
             for a in m["a"]:
@@ -424,7 +427,16 @@ GROUP_AREAS = [
     (r"14k|sun yee on|wo shing wo|triad", "HK", "Hong Kong"),
 ]
 
+def row_order(r):
+    auth = r.get("authority") or "US"; src = r.get("source") or ""
+    return (AUTH_ORDER.index(auth) if auth in AUTH_ORDER else 99, source_rank(source_key(src, auth)),
+            str(r.get("entity_number") or r.get("_id") or ""), r.get("name") or "", r.get("addresses") or "",
+            json.dumps(r, sort_keys=True, default=str))
+
 def build(rows):
+    # Download order is not stable between runs. Sorting first makes ids, merges and every
+    # first-match choice below depend only on the content of the lists.
+    rows = sorted(rows, key=row_order)
     parties = []
     for r in rows:
         name = (r.get("name") or "").strip()
@@ -465,6 +477,9 @@ def build(rows):
         while p["id"] in seen:
             i += 1; p["id"] = f"{base}#{i}"
         seen[p["id"]] = p
+        # the underlying list records; change tracking works on these, so merges and splits between
+        # authorities never look like additions or removals
+        p["rids"] = [{"id": p["id"], "s": p["s"], "p": p["p"][:3]}]
 
     parties = merge_across_authorities(parties)
 
@@ -586,52 +601,122 @@ def build(rows):
     return parties, edges
 
 # ------------------------------------------------------------------ changes
-def diff(parties, today):
-    path = os.path.join(OUT, "state.json")
-    state = {"seen": {}, "series": [], "events": []}
-    if os.path.exists(path):
-        with open(path) as f: state = json.load(f)
-    seen = state["seen"]; now_ids = {p["id"]: p for p in parties}
-    PFX = {"ofa": "US", "bis": "US", "sta": "US", "eu": "EU", "uk": "UK", "un": "UN", "au": "AU", "ca": "CA"}
-    auth_of_id = lambda pid: PFX.get(pid.split(":")[0], "US")
-    prev_auths = set(state.get("auths") or {auth_of_id(pid) for pid in seen})
-    now_auths = {a for p in parties for a in p["au"]}
-    onboarding = now_auths - prev_auths if prev_auths else set()
-    # first date each authority appeared; additions on that date for that authority were onboarding, not designations
-    first_day = {}
-    for pid, rec in seen.items():
-        a = auth_of_id(pid); first_day[a] = min(first_day.get(a, "9999"), rec.get("first", "9999"))
-    state["events"] = [e for e in state.get("events", []) if not (e["op"] == "+" and first_day.get(auth_of_id(e["id"])) == e["d"] and e["d"] != state.get("first_day_of_site", ""))]
-    added, removed = [], []
-    for pid, p in now_ids.items():
-        if pid not in seen:
-            seen[pid] = {"first": today, "last": today, "n": p["n"], "s": p["s"], "p": p["p"][:3], "cc": p["cc"], "t": p["t"]}
-            added.append(pid)
-        else:
-            seen[pid]["last"] = today
-    for pid, rec in list(seen.items()):
-        if pid not in now_ids and rec.get("last") == state.get("last_run"):
-            removed.append(pid)
-    first_run = not state.get("last_run")
-    if not first_run:
-        for pid in added:
-            if onboarding and set(now_ids[pid]["au"]) <= onboarding: continue   # first load of a new list, not a new designation
-            r = seen[pid]; state["events"].append({"d": today, "op": "+", "id": pid, "n": r["n"], "s": r["s"], "p": r["p"], "cc": r["cc"], "t": r["t"]})
-        for pid in removed:
-            r = seen[pid]; state["events"].append({"d": today, "op": "-", "id": pid, "n": r["n"], "s": r["s"], "p": r["p"], "cc": r["cc"], "t": r["t"]})
+STATE_DIR = os.path.join(ROOT, "state")
+STATE_PATH = os.path.join(STATE_DIR, "state.json")      # outside site/, so it is never deployed
+OLD_STATE_PATH = os.path.join(OUT, "state.json")
+STATE_VERSION = 2
+PFX_AUTH = {"ofa": "US", "bis": "US", "sta": "US", "eu": "EU", "uk": "UK", "un": "UN", "au": "AU", "ca": "CA"}
+def auth_of_id(pid): return PFX_AUTH.get(pid.split(":")[0], "US")
+MASS_REMOVAL = (50, 0.10)     # more removals than max(50, 10% of an authority's records) in one run is a broken feed, not delistings
+RELIST_DAYS = 7               # a record back after this long is a new listing; sooner, the removal was a glitch
+
+def save_state(state):
+    os.makedirs(STATE_DIR, exist_ok=True)
+    # one record per line with sorted keys, so the nightly commit is a small diff instead of a new 18 MB blob
+    with open(STATE_PATH, "w", encoding="utf-8") as f:
+        f.write("{\n")
+        head = {k: v for k, v in state.items() if k != "seen"}
+        for k in sorted(head): f.write(json.dumps(k) + ":" + json.dumps(head[k], separators=(",", ":"), ensure_ascii=False) + ",\n")
+        f.write('"seen":{\n')
+        items = sorted(state["seen"].items())
+        for i, (k, v) in enumerate(items):
+            f.write(json.dumps(k) + ":" + json.dumps(v, separators=(",", ":"), sort_keys=True, ensure_ascii=False) + (",\n" if i < len(items) - 1 else "\n"))
+        f.write("}}\n")
+
+def diff(parties, today, status):
+    """Track additions and removals per underlying list record (not per merged party), so
+    - a source that fails to download never produces removals,
+    - a merge or split between authorities never looks like a change,
+    - re-running the build on the same day never repeats events,
+    - a record that comes back retracts its removal."""
+    state = None
+    for path in (STATE_PATH, OLD_STATE_PATH):
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f: state = json.load(f)
+            break
+    warnings = []
+    baseline = state is None or state.get("version") != STATE_VERSION
+    if baseline:
+        # First run of this tracker. Earlier history was built on unstable ids and is not trustworthy,
+        # so start clean: record everything as seen today and emit no events.
+        old = state or {}
+        state = {"version": STATE_VERSION, "seen": {}, "events": [], "series": old.get("series", []),
+                 "first_day_of_site": old.get("first_day_of_site", today), "tracking_since": today}
+        warnings.append("change history reset: record-level tracking starts " + today)
+    seen = state["seen"]
+    ok = {a for a, st in status.items() if st.get("ok")}
+    now = {}
+    for p in parties:
+        for r in p.get("rids") or [{"id": p["id"], "s": p["s"], "p": p["p"][:3]}]:
+            now[r["id"]] = (p, r)
+    events = state["events"]
+    def ev(op, rid, rec):
+        e = {"d": today, "op": op, "id": rec["pid"], "n": rec["n"], "s": rec["s"], "p": rec["p"], "cc": rec["cc"], "t": rec["t"], "au": auth_of_id(rid), "r": rid}
+        if not any(x["d"] == today and x["op"] == op and x.get("r") == rid for x in events): events.append(e)
+
+    prev_auths = {auth_of_id(rid) for rid in seen}
+    added, removed, relisted = [], [], []
+    for rid, (p, r) in now.items():
+        rec = {"pid": p["id"], "n": p["n"], "s": r["s"], "p": r["p"], "cc": p["cc"], "t": p["t"], "last": today}
+        old = seen.get(rid)
+        if old is None:
+            rec["first"] = today; seen[rid] = rec
+            if not baseline: added.append(rid)
+            continue
+        gone = old.get("gone")
+        rec["first"] = old.get("first", today); seen[rid] = rec
+        if gone:
+            back_after = (dt.date.fromisoformat(today) - dt.date.fromisoformat(gone)).days
+            # withdraw the removal: it was a glitch, or it is superseded by the re-listing below
+            state["events"] = events = [e for e in events if not (e["op"] == "-" and e.get("r") == rid and e["d"] >= gone)]
+            if back_after > RELIST_DAYS: relisted.append(rid)
+
+    # removals: only for authorities that loaded this run, once per record
+    candidates = defaultdict(list)
+    for rid, rec in seen.items():
+        if rid in now or rec.get("gone"): continue
+        a = auth_of_id(rid)
+        if a not in ok: continue                  # its list did not load: absence means nothing
+        candidates[a].append(rid)
+    # A list loading for the first time (or for the first time since tracking began) is onboarding, and a
+    # burst of new ids from one authority means its id scheme changed. Neither is a designation.
+    by_auth_add = Counter(auth_of_id(rid) for rid in added)
+    quiet = set()
+    for a, n in by_auth_add.items():
+        active = sum(1 for rid, rec in seen.items() if auth_of_id(rid) == a and not rec.get("gone")) - n   # before this run
+        if a not in prev_auths:
+            quiet.add(a); warnings.append(f"{a}: first load, {n} records recorded without events")
+        elif n > max(MASS_REMOVAL[0], MASS_REMOVAL[1] * active):
+            quiet.add(a); warnings.append(f"{a}: {n} new record ids in one run; treated as an id change, no events recorded")
+    added = [rid for rid in added if auth_of_id(rid) not in quiet]
+    for a in quiet:
+        for rid in candidates.pop(a, []): seen[rid]["gone"] = today     # the old ids of a re-keyed list, retired silently
+    for a, rids in candidates.items():
+        active = sum(1 for rid, rec in seen.items() if auth_of_id(rid) == a and not rec.get("gone"))
+        if len(rids) > max(MASS_REMOVAL[0], MASS_REMOVAL[1] * active):
+            warnings.append(f"{a}: {len(rids)} of {active} records missing in one run; treated as a broken feed, no removals recorded")
+            continue
+        removed += rids
+
+    for rid in added + relisted: ev("+", rid, seen[rid])
+    for rid in removed:
+        seen[rid]["gone"] = today; ev("-", rid, seen[rid])
+
+    # forget records that have been gone longer than the event window
     cutoff = (dt.date.fromisoformat(today) - dt.timedelta(days=KEEP_DAYS)).isoformat()
-    state["events"] = [e for e in state["events"] if e["d"] >= cutoff]
-    if not state["series"] or state["series"][-1]["d"] != today:
-        state["series"].append({"d": today, "n": len(parties)})
-    else:
-        state["series"][-1]["n"] = len(parties)
+    for rid in [rid for rid, rec in seen.items() if rec.get("gone") and rec["gone"] < cutoff]: del seen[rid]
+    state["events"] = [e for e in events if e["d"] >= cutoff]
+    if not state["series"] or state["series"][-1]["d"] != today: state["series"].append({"d": today, "n": len(parties)})
+    else: state["series"][-1]["n"] = len(parties)
     state["series"] = state["series"][-400:]
     state["last_run"] = today
-    state["auths"] = sorted(now_auths | prev_auths)
-    state.setdefault("first_day_of_site", today)
-    with open(path, "w") as f: json.dump(state, f, separators=(",", ":"))
-    return {"events": sorted(state["events"], key=lambda e: e["d"], reverse=True), "series": state["series"],
-            "first_run": first_run, "added_today": len(added), "removed_today": len(removed)}
+    save_state(state)
+    if os.path.exists(OLD_STATE_PATH): os.remove(OLD_STATE_PATH)
+    # the site does not need the record id or the per-record details
+    out = [{k: v for k, v in e.items() if k != "r"} for e in sorted(state["events"], key=lambda e: e["d"], reverse=True)]
+    return {"events": out, "series": state["series"], "first_run": baseline,
+            "added_today": len(added) + len(relisted), "removed_today": len(removed), "warnings": warnings,
+            "tracking_since": state.get("tracking_since")}
 
 # --------------------------------------------------------------------- main
 def main():
@@ -654,7 +739,7 @@ def main():
     multi = sum(1 for p in parties if len(p["au"]) > 1)
     placed = sum(1 for p in parties if p["cc"])
     with_city = sum(1 for p in parties if p["lat"] is not None)
-    changes = diff(parties, today)
+    changes = diff(parties, today, status)
 
     programs = defaultdict(int); sources = defaultdict(int); types = defaultdict(int); countries = defaultdict(int)
     for p in parties:
@@ -700,6 +785,7 @@ def main():
         "countries": dict(countries), "iso_numeric": iso_numeric, "iso_name": iso_name, "src_list": src_list,
         "added_today": changes["added_today"], "removed_today": changes["removed_today"],
         "authorities": {a: {"n": auth_counts.get(a, 0), **status.get(a, {"ok": False, "n": 0, "error": "not loaded"})} for a in AUTH_ORDER},
+        "change_warnings": changes["warnings"], "tracking_since": changes["tracking_since"],
         "multi_listed": multi, "dated": sum(1 for p in compact if p.get("ly")), "vessels_with_imo": meta_vessels,
     }
     # Hosts cap single files (Cloudflare Pages: 25 MB), so the party list is written in parts plus a manifest.
@@ -744,6 +830,7 @@ def main():
         st = meta["authorities"][a]
         print(f"  {a}: {'ok' if st['ok'] else 'FAILED'} {st['n']} parties {st['error']}")
     print(f"  {multi} parties listed by more than one authority")
+    for w in changes["warnings"]: print("  WARNING " + w)
     import pages
     n_prog, n_cc, n_party = pages.build_pages(args.site_url)
     print(f"static pages: {n_prog} programs, {n_cc} countries, {n_party} parties" + (", sitemap written" if args.site_url else ", no --site-url so no sitemap"))

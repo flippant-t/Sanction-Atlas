@@ -33,10 +33,25 @@ def fetch(auth, sample_dir=None):
         p = os.path.join(sample_dir, fname)
         if not os.path.exists(p): raise FileNotFoundError(p)
         with open(p, "rb") as f: return f.read()
-    import requests
-    r = requests.get(url, timeout=240, headers=UA)
-    r.raise_for_status()
-    return r.content
+    return get_with_retries(url, UA, timeout=240)
+
+def get_with_retries(url, headers, timeout, attempts=4, wait=(10, 30, 90)):
+    """Government list servers drop connections and time out now and then. One failed request used to
+    drop an entire authority for the day, so retry with a growing pause. 4xx other than 408/429 is final."""
+    import time, requests
+    last = None
+    for i in range(attempts):
+        try:
+            r = requests.get(url, timeout=timeout, headers=headers)
+            if r.status_code < 400: return r.content
+            if 400 <= r.status_code < 500 and r.status_code not in (408, 429): r.raise_for_status()
+            last = requests.HTTPError(f"HTTP {r.status_code}")
+        except (requests.ConnectionError, requests.Timeout) as ex:
+            last = ex
+        if i < attempts - 1:
+            print(f"  retrying {url.split('/')[2]} in {wait[min(i, len(wait) - 1)]}s after {type(last).__name__}", flush=True)
+            time.sleep(wait[min(i, len(wait) - 1)])
+    raise last
 
 def clean(s):
     return re.sub(r"\s+", " ", (s or "")).strip()
