@@ -413,7 +413,7 @@ async function loadStyle(){
     for(const l of st.layers){
       l.paint=l.paint||{};
       if(l.type==='background'){l.paint['background-color']='rgba(0,0,0,0)';continue;}
-      if(l.type==='fill'){l.paint['fill-color']=water.test(l.id)?'#aacce8':bld.test(l.id)?'#e9e3d6':green.test(l.id)?'#eaeee1':'#f5f1e7';delete l.paint['fill-pattern'];continue;}
+      if(l.type==='fill'){const fo=l.paint['fill-opacity'];l.paint['fill-opacity']=fo===undefined?0.999:typeof fo==='number'?Math.min(fo,0.999):(Array.isArray(fo)&&fo[0]==='interpolate'?fo.map((v,i)=>i>=4&&i%2===0&&typeof v==='number'?Math.min(v,0.999):v):fo);l.paint['fill-color']=water.test(l.id)?'#aacce8':bld.test(l.id)?'#e9e3d6':green.test(l.id)?'#eaeee1':'#f5f1e7';delete l.paint['fill-pattern'];continue;}
       if(l.type==='line'){l.paint['line-color']=boundary.test(l.id)?'#c3b9a7':water.test(l.id)?'#bcd3e8':'#e2dcd0';continue;}
       if(l.type==='symbol'){l.paint['text-color']=water.test(l.id)?'#6f8ba8':'#5b6472';l.paint['text-halo-color']='rgba(255,255,255,0.6)';l.paint['text-halo-width']=0.9;l.paint['text-halo-blur']=0.6;continue;}
     }
@@ -727,14 +727,16 @@ async function boot(){
   document.getElementById('stamp').innerHTML=`<b>${META.parties.toLocaleString()}</b> parties from ${okA.length} authorities (${okA.join(', ')})${META.multi_listed?`, ${META.multi_listed.toLocaleString()} on more than one list`:''}.${failA.length?` <span class="minus">${failA.join(', ')} failed to load this build.</span>`:''} ${META.with_city.toLocaleString()} placed to a city. Updated ${new Date(META.built).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}.`+(CHANGES.series&&CHANGES.series.length>1?` Last build: <span class="plus">+${META.added_today}</span> <span class="minus">−${META.removed_today}</span>.`:'');
   document.getElementById('navstamp').textContent=`${META.parties.toLocaleString()} parties · updated ${new Date(META.built).toLocaleDateString(undefined,{month:'short',day:'numeric'})}`;
   renderStories();renderFeed();
-  map=new maplibregl.Map({container:'map',style:{...style,layers:[{id:'water-bg',type:'background',paint:{'background-color':'#aacce8'}},...style.layers.filter(l=>l.type!=='background')]},center:[25,25],zoom:1.6,minZoom:0.8,maxZoom:16,attributionControl:{compact:true},fadeDuration:0,maxTileCacheSize:6000,refreshExpiredTiles:false});map.setPrefetchZoomDelta?map.setPrefetchZoomDelta(6):null;
+  map=new maplibregl.Map({container:'map',style:{...style,layers:[{id:'water-bg',type:'background',paint:{'background-color':'#aacce8','background-opacity':0.999}},...style.layers.filter(l=>l.type!=='background')]},center:[25,25],zoom:1.6,minZoom:0.8,maxZoom:16,attributionControl:{compact:true},fadeDuration:0,maxTileCacheSize:6000,refreshExpiredTiles:false});map.setPrefetchZoomDelta?map.setPrefetchZoomDelta(6):null;
   document.getElementById('globeBtn').classList.add('on');
   map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-left');
   popup=new maplibregl.Popup({closeButton:false,closeOnClick:false,offset:8});
   let setupDone=false;const onLoad=()=>{if(setupDone)return;setupDone=true;try{
-    // drawn for every style, not just the offline one: this is the map's land
+    // drawn for every style, not just the offline one: this is the map's land.
+    // Opacity 0.999 (here, on water-bg and on basemap fills) keeps layers out of MapLibre's opaque depth pass,
+    // which Safari's WebGL renders wrongly on the globe: tiles went missing and lines vanished. Looks identical.
     map.addSource('flatland',{type:'geojson',data:COUNTRIES});
-    map.addLayer({id:'flatland',type:'fill',source:'flatland',paint:{'fill-color':'#f3efe6'}});
+    map.addLayer({id:'flatland',type:'fill',source:'flatland',paint:{'fill-color':'#f3efe6','fill-opacity':0.999}});
     map.addLayer({id:'flatland-line',type:'line',source:'flatland',paint:{'line-color':'#cfc5b2','line-width':0.7,'line-opacity':['interpolate',['linear'],['zoom'],2,0.9,4,0]}});
     addLayers();addCountryLabels();readURL();}catch(e){console.error('setup failed',e);toast('Map setup failed: '+e.message);}loadingEl.style.display='none';};
   map.once('load',onLoad);const poll=setInterval(()=>{if(setupDone){clearInterval(poll);return;}if(map.isStyleLoaded()){map.triggerRepaint();if(map.loaded())onLoad();}},500);
