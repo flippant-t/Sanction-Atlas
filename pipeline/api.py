@@ -234,12 +234,30 @@ def build_api(site_url):
     ex = site_url + "api/v1/"
     n_auth = sum(1 for v in meta["authorities"].values() if v["ok"])
     F, P = LIMITS["free"], LIMITS["pro"]
+    AUTH_NAME = {"US": "United States", "EU": "European Union", "UK": "United Kingdom",
+                 "UN": "United Nations", "AU": "Australia", "CA": "Canada"}
+    AUTH_LIST = {"US": "Consolidated Screening List (OFAC SDN and non-SDN, BIS Entity, Denied Persons, Unverified and MEU, State Department)",
+                 "EU": "Consolidated Financial Sanctions List", "UK": "UK Sanctions List (FCDO)",
+                 "UN": "Security Council Consolidated List", "AU": "DFAT Consolidated List",
+                 "CA": "SEMA and autonomous sanctions"}
+    # Freshness is what a compliance reader checks first, so it replaces the counters that used to
+    # sit here. Every authority shown as loaded was fetched during this build; a failure is named.
+    auth_rows = "".join(
+        f'<tr><td>{esc(AUTH_NAME.get(a, a))}</td><td>{esc(AUTH_LIST.get(a, ""))}</td>'
+        f'<td class="n">{v.get("n", 0):,}</td>'
+        f'<td>{"loaded " + esc(meta["date"]) if v.get("ok") else "<b>not loaded</b> · " + esc((v.get("error") or "")[:70])}</td></tr>'
+        for a, v in meta["authorities"].items())
     tabs_js = """<script>document.querySelectorAll('.tabs').forEach(t=>{const pres=[];let n=t.nextElementSibling;while(n&&n.tagName==='PRE'){pres.push(n);n=n.nextElementSibling;}
       t.querySelectorAll('button').forEach((b,i)=>b.onclick=()=>{t.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');pres.forEach((p,j)=>p.style.display=i===j?'':'none');});pres.forEach((p,j)=>p.style.display=j?'none':'');});</script>"""
     body = f"""<h1>Sanctions screening and monitoring, across six authorities</h1>
 <p class="lede">{meta['parties']:,} parties from {n_auth} authorities, merged so one designated party is one record however many lists carry it. Screen a name in a single request, or put names under watch and be told when something changes. Rebuilt every night from the official sources. JSON, CORS enabled, no key needed to start.</p>
-<div class="row"><a class="btn warm" href="#quickstart">Get started free</a><a class="btn" href="#monitoring">See monitoring</a><a class="btn" href="{site_url}api/subscribe">Subscribe to Pro</a><a class="btn" href="{ex}openapi.json">OpenAPI spec</a></div>
-<div class="stats"><div class="stat"><b>{meta['parties']:,}</b><span>merged parties</span></div><div class="stat"><b>{n_auth}</b><span>authorities</span></div><div class="stat"><b>{meta.get('multi_listed',0):,}</b><span>on more than one list</span></div><div class="stat"><b>{meta['edges']['link']:,}</b><span>relationships</span></div><div class="stat"><b>nightly</b><span>rebuild, last {esc(meta['date'])}</span></div></div>
+<div class="row"><a class="btn warm" href="#quickstart">Get started free</a><a class="btn" href="#monitoring">See monitoring</a></div>
+
+<h2 id="coverage">What is loaded right now</h2>
+<p class="sub">Every list is downloaded fresh from the publishing authority each night. If a download or parse fails, that authority is marked failed here rather than quietly serving yesterday's copy.</p>
+<table><tr><th>Authority</th><th>List</th><th class="n">Records</th><th>This build</th></tr>
+{auth_rows}</table>
+<p class="meta">Last rebuilt {esc(meta['date'])}. {meta['parties']:,} merged parties in total, of which {meta.get('multi_listed',0):,} are carried by more than one authority, with {meta['edges']['link']:,} relationships taken from the official records. <a href="{ex}meta.json">meta.json</a> carries the same figures for machines.</p>
 
 <h2 id="uses">What people use it for</h2>
 <table><tr><th>If you are</th><th>What to call</th></tr>
@@ -251,16 +269,18 @@ def build_api(site_url):
 <tr><td><b>Watching a book of existing relationships.</b> The counterparty who cleared in January and is designated in March is the one that matters. Names under watch are rechecked against every nightly build.</td><td><code>POST watchlist</code>, <code>GET alerts</code></td></tr>
 <tr><td><b>Researching or reporting.</b> The whole merged dataset is downloadable, the change history is public, and the RSS feed carries every addition and removal.</td><td><code>changes.json</code>, <code>feed.xml</code></td></tr></table>
 
-<h2 id="pricing">Plans</h2>
-<div class="cards">
-<div class="card"><div class="tag">Free</div><h3>Open access</h3><div class="price">$0<small> · no key</small></div>
-<ul><li>Every static file: full dataset, programs, countries, changes, RSS</li><li>Screen: {F['screen']} names per request, unlimited requests</li><li>Search: {F['search']} results per request</li><li>{F['candidates']} candidates considered per name</li><li>In-browser screener with no limit</li><li>Personal and research use</li></ul>
-<a class="btn" href="#quickstart">Start with the docs</a></div>
-<div class="card pro"><div class="tag">Pro</div><h3>For teams and products</h3><div class="price">$19.99<small> / month, cancel any time</small></div>
-<ul><li><b>Ongoing monitoring:</b> names rechecked against every nightly build, with email or webhook alerts on new matches, amendments and delistings</li><li>Screen: {P['screen']} names per request</li><li>Search: {P['search']} results per request</li><li>{P['candidates']} candidates considered per name, so more distant spelling variants surface</li><li>Commercial use</li><li>Email support</li></ul>
-<a class="btn warm" href="{site_url}api/subscribe">Subscribe</a> <a class="btn" href="{site_url}api/portal">Manage subscription</a></div>
-</div>
-<p class="meta">Screening itself is free and unlimited; the tiers differ in how many names fit in one request, how deep the candidate search goes, and whether names can be kept under watch. Pro keys are issued on the page you land on after checkout, and can be re-shown by reopening that link. Send the key as an <code>x-api-key</code> header rather than <code>?key=</code>, which leaks into logs and browser history. <code>GET me</code> confirms the tier. Keys deactivate automatically when a subscription ends. Tax is calculated at checkout.</p>
+<h2 id="pricing">Free and Pro</h2>
+<p class="sub">Screening is free and unlimited. What Pro adds is monitoring: the ability to leave names under watch instead of asking again yourself.</p>
+<table><tr><th>&nbsp;</th><th>Free · no key</th><th>Pro · $19.99 a month</th></tr>
+<tr><td><b>Screen a name today</b><br><span class="meta">One request, all six authorities</span></td><td>Unlimited requests, {F['screen']} names in each</td><td>Unlimited requests, {P['screen']} names in each</td></tr>
+<tr><td><b>Keep names under watch</b><br><span class="meta">Rechecked against every nightly build; alerts by email or webhook when a watched name starts matching, when a match is amended, and when one is delisted</span></td><td>&mdash;</td><td>Included</td></tr>
+<tr><td><b>Depth of the candidate search</b><br><span class="meta">How many possible matches are scored per name before the best are returned. Deeper search surfaces more distant spelling variants.</span></td><td>{F['candidates']} per name</td><td>{P['candidates']} per name</td></tr>
+<tr><td><b>Search results</b></td><td>{F['search']} per request</td><td>{P['search']} per request</td></tr>
+<tr><td><b>The whole dataset</b><br><span class="meta">Every static file: parties, programs, countries, changes, RSS</span></td><td>Included</td><td>Included</td></tr>
+<tr><td><b>In-browser screener</b><br><span class="meta">Runs on your own machine, so no list ever leaves it</span></td><td>No limit</td><td>No limit</td></tr>
+<tr><td><b>Commercial use</b></td><td>&mdash;</td><td>Included</td></tr>
+<tr><td>&nbsp;</td><td><a class="btn" href="#quickstart">Start with the docs</a></td><td><a class="btn warm" href="{site_url}api/subscribe">Subscribe</a> <a class="btn" href="{site_url}api/portal">Manage</a></td></tr></table>
+<p class="meta">Cancel any time; access continues to the end of the paid period. Keys are issued on the page you land on after checkout and can be re-shown by reopening that link. Send the key as an <code>x-api-key</code> header rather than <code>?key=</code>, which leaks into logs and browser history. <code>GET me</code> confirms the tier. Keys deactivate automatically when a subscription ends. Tax is calculated at checkout.</p>
 
 <h2 id="quickstart">Quick start</h2>
 <div class="tabs"><button class="on">curl</button><button>Python</button><button>JavaScript</button></div>
