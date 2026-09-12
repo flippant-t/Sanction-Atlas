@@ -131,6 +131,10 @@ def build_pages(site_url):
     # One palette for the whole site: the generated pages inline it through theme.py, and the map
     # links this file. Changing palette.py changes both.
     write(os.path.join(SITE, "palette.css"), palette.stylesheet())
+    # screen.html is hand-written rather than generated, so it links this instead of carrying its
+    # own copy of the chrome. That copy is what left it on the old palette and the old nav.
+    write(os.path.join(SITE, "theme.css"),
+          "/* Generated from pipeline/theme.py. Do not edit by hand. */\n" + theme.CSS.lstrip())
 
     recent = [e for e in changes.get("events", []) if e["op"] == "+"]
     urls = []
