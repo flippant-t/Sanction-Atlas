@@ -208,11 +208,16 @@ def source_key(s, auth="US"):
     if "bureau of industry" in t or "denied" in t or "unverified" in t or "military end" in t: return "BIS other"
     return "State / other"
 
-def party_type(t):
+def party_type(t, row=None):
     s = (t or "").lower()
     if s.startswith("ind"): return "Individual"
     if s.startswith("ves"): return "Vessel"
     if s.startswith("air"): return "Aircraft"
+    if s.startswith(("ent", "org", "com")): return "Entity"
+    # Not every feed populates `type`, and defaulting to Entity types UK people as companies.
+    # A date or place of birth only ever appears on a person, so use that before giving up.
+    if row and ((row.get("dates_of_birth") or "").strip() or (row.get("places_of_birth") or "").strip()):
+        return "Individual"
     return "Entity"
 
 def split(s):
@@ -458,7 +463,7 @@ def build(rows):
                      else "CAPTA" if "capta" in sl else "FSE" if "foreign sanctions evaders" in sl else "NS-" + re.sub(r"[^A-Z0-9]+", "-", src.split(" - ")[0].upper()).strip("-")[:30] if "non-sdn" in sl
                      else re.sub(r"[^A-Z0-9]+", "-", src.split(" - ")[0].upper()).strip("-")[:30]]
         p = {
-            "id": pid, "n": name, "t": party_type(r.get("type")), "s": source_key(src, auth), "src": src, "au": [auth],
+            "id": pid, "n": name, "t": party_type(r.get("type"), r), "s": source_key(src, auth), "src": src, "au": [auth],
             "recs": [{"au": auth, "src": src, "url": r.get("source_information_url") or r.get("source_list_url") or "", "p": progs, "listed": r.get("start_date") or ""}],
             "p": progs, "a": addrs, "ti": r.get("title") or "",
             "alt": split(r.get("alt_names")), "dob": r.get("dates_of_birth") or "",
