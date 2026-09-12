@@ -19,6 +19,13 @@ Dynamic (functions/):
   /api/v1/party/<id>                one party by id
   /api/v1/search?q=                 name / alias search
   /api/v1/screen  (POST)            fuzzy screening of a list of names
+  /api/v1/watchlist  (Pro)          names monitored against every nightly build
+  /api/v1/alerts     (Pro)          changes affecting watched names
+
+Request limits live in one place, LIMITS below, and are written into both the docs page and
+openapi.json from there. They previously drifted apart: the page said 200 names per screen
+request, the curl example said 500 and the OpenAPI summary said 100 free / 500 Pro, while the
+worker enforced 50 and 200. Keep this table in step with functions/api/v1/_lib.js.
 """
 import html, json, os, re, hashlib, datetime as dt
 from collections import defaultdict
@@ -27,6 +34,13 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SITE = os.path.join(ROOT, "site")
 DATA = os.path.join(SITE, "data")
 API = os.path.join(SITE, "api", "v1")
+
+# Mirrors LIMITS in functions/api/v1/_lib.js. If you change one, change both.
+LIMITS = {
+    "free": {"screen": 50, "search": 20, "candidates": 60},
+    "pro": {"screen": 200, "search": 100, "candidates": 200},
+}
+RATE_PER_MIN = 120
 
 def esc(s): return html.escape(str(s or ""))
 
@@ -142,9 +156,11 @@ def build_api(site_url):
         dump(os.path.join(API, "search", name.lower() + ".json"), _blob(ts))
     # document frequency for common tokens only, so the worker can pick the most selective token in a
     # query and avoid pulling the huge "BANK" / "LIMITED" style shards when a rarer one is available.
+    # The screening scorer also reads this: a token carried by hundreds of parties is weighted down,
+    # which is what stops common surnames producing hits.
     df = {t: len(v) for t, v in tok2p.items() if len(v) >= 60}
     dump(os.path.join(API, "search", "_meta.json"), {"prefix_lens": prefix_lens, "shards": sorted(plan), "tokens": len(tok2p),
-         "max_posting": MAX_POSTING, "legal": sorted(LEGAL), "df": df})
+         "max_posting": MAX_POSTING, "legal": sorted(LEGAL), "df": df, "entities": len(parties)})
     n_shards_search = len(plan)
 
     # shards
@@ -193,7 +209,8 @@ def build_api(site_url):
             "/countries.json": {"get": {"summary": "Countries with counts"}},
             "/countries/{iso2}.json": {"get": {"summary": "Parties located in one country"}},
             "/party/{id}": {"get": {"summary": "One party by id (dynamic)"}},
-            "/search": {"get": {"summary": "Name or alias search (dynamic)", "parameters": [{"name": "q", "in": "query", "required": True}, {"name": "limit", "in": "query"}]}},
+            "/search": {"get": {"summary": f"Name or alias search (dynamic). {LIMITS['free']['search']} results per request, {LIMITS['pro']['search']} with a Pro key.",
+                                "parameters": [{"name": "q", "in": "query", "required": True}, {"name": "limit", "in": "query"}]}},
             "/me": {"get": {"summary": "Tier and limits for the supplied API key"}},
             "/watchlist": {
                 "get": {"summary": "Your watchlists (Pro)"},
@@ -207,7 +224,8 @@ def build_api(site_url):
             "/alerts": {"get": {"summary": "Changes affecting your watched names (Pro)", "parameters": [
                 {"name": "since", "in": "query"}, {"name": "type", "in": "query"},
                 {"name": "list_id", "in": "query"}, {"name": "limit", "in": "query"}]}},
-            "/screen": {"post": {"summary": "Fuzzy screening (100 names per request free, 500 with a Pro key); the in-browser screener has no limit", "requestBody": {"content": {"application/json": {"schema": {"type": "object", "properties": {"names": {"type": "array", "items": {"type": "string"}}, "threshold": {"type": "number"}}}}}}}},
+            "/screen": {"post": {"summary": f"Fuzzy screening. {LIMITS['free']['screen']} names per request, {LIMITS['pro']['screen']} with a Pro key; the in-browser screener has no limit.",
+                                 "requestBody": {"content": {"application/json": {"schema": {"type": "object", "properties": {"names": {"type": "array", "items": {"type": "string"}}, "threshold": {"type": "number"}}}}}}}},
         },
     })
 
@@ -215,23 +233,34 @@ def build_api(site_url):
     import theme
     ex = site_url + "api/v1/"
     n_auth = sum(1 for v in meta["authorities"].values() if v["ok"])
+    F, P = LIMITS["free"], LIMITS["pro"]
     tabs_js = """<script>document.querySelectorAll('.tabs').forEach(t=>{const pres=[];let n=t.nextElementSibling;while(n&&n.tagName==='PRE'){pres.push(n);n=n.nextElementSibling;}
       t.querySelectorAll('button').forEach((b,i)=>b.onclick=()=>{t.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');pres.forEach((p,j)=>p.style.display=i===j?'':'none');});pres.forEach((p,j)=>p.style.display=j?'none':'');});</script>"""
-    body = f"""<h1>The sanctions data behind the map, as an API</h1>
-<p class="lede">{meta['parties']:,} parties from {n_auth} authorities, merged across lists, geocoded, with the relationships between them. Rebuilt every night from the official sources. JSON, CORS enabled, no key needed to start.</p>
-<div class="row"><a class="btn warm" href="#quickstart">Get started free</a><a class="btn" href="{site_url}api/subscribe">Subscribe to Pro</a><a class="btn" href="{ex}openapi.json">OpenAPI spec</a></div>
+    body = f"""<h1>Sanctions screening and monitoring, across six authorities</h1>
+<p class="lede">{meta['parties']:,} parties from {n_auth} authorities, merged so one designated party is one record however many lists carry it. Screen a name in a single request, or put names under watch and be told when something changes. Rebuilt every night from the official sources. JSON, CORS enabled, no key needed to start.</p>
+<div class="row"><a class="btn warm" href="#quickstart">Get started free</a><a class="btn" href="#monitoring">See monitoring</a><a class="btn" href="{site_url}api/subscribe">Subscribe to Pro</a><a class="btn" href="{ex}openapi.json">OpenAPI spec</a></div>
 <div class="stats"><div class="stat"><b>{meta['parties']:,}</b><span>merged parties</span></div><div class="stat"><b>{n_auth}</b><span>authorities</span></div><div class="stat"><b>{meta.get('multi_listed',0):,}</b><span>on more than one list</span></div><div class="stat"><b>{meta['edges']['link']:,}</b><span>relationships</span></div><div class="stat"><b>nightly</b><span>rebuild, last {esc(meta['date'])}</span></div></div>
+
+<h2 id="uses">What people use it for</h2>
+<table><tr><th>If you are</th><th>What to call</th></tr>
+<tr><td><b>Onboarding customers or releasing payments.</b> Screen at signup, then again before a payout clears. One request covers every authority at once, so there is no separate OFAC, EU and UK check to reconcile.</td><td><code>POST screen</code></td></tr>
+<tr><td><b>Shipping goods or technology abroad.</b> US export-control lists sit alongside OFAC here: the BIS Entity List, Denied Persons, Unverified and Military End User lists, and State Department debarments. Screening that only covers OFAC misses all of them.</td><td><code>POST screen</code>, then <code>GET party/&lt;id&gt;</code> for the programme that caught it</td></tr>
+<tr><td><b>Operating under more than one regime.</b> US, EU and UK designations have diverged since 2022. Every result carries an <code>authorities</code> array, so you can see at a glance whether a party is a problem for your London entity, your New York entity, or both.</td><td><code>GET search</code>, field <code>au</code></td></tr>
+<tr><td><b>Fixing a vessel or checking a counterparty in trade.</b> Ships are listed as parties with their IMO number in the record, so a vessel resolves the same way a company does.</td><td><code>GET search?q=&lt;vessel or IMO&gt;</code></td></tr>
+<tr><td><b>Onboarding investors or fund subscribers.</b> A subscription list goes through in one batch instead of one search box at a time, and the response lines up with your input so you can attach it to the file.</td><td><code>POST screen</code></td></tr>
+<tr><td><b>Watching a book of existing relationships.</b> The counterparty who cleared in January and is designated in March is the one that matters. Names under watch are rechecked against every nightly build.</td><td><code>POST watchlist</code>, <code>GET alerts</code></td></tr>
+<tr><td><b>Researching or reporting.</b> The whole merged dataset is downloadable, the change history is public, and the RSS feed carries every addition and removal.</td><td><code>changes.json</code>, <code>feed.xml</code></td></tr></table>
 
 <h2 id="pricing">Plans</h2>
 <div class="cards">
 <div class="card"><div class="tag">Free</div><h3>Open access</h3><div class="price">$0<small> · no key</small></div>
-<ul><li>Every static file: full dataset, programs, countries, changes, RSS</li><li>Search: 20 results per request</li><li>Screen: 50 names per request</li><li>Standard fuzzy-match depth</li><li>In-browser screener with no limit</li><li>Personal and research use</li></ul>
+<ul><li>Every static file: full dataset, programs, countries, changes, RSS</li><li>Screen: {F['screen']} names per request, unlimited requests</li><li>Search: {F['search']} results per request</li><li>{F['candidates']} candidates considered per name</li><li>In-browser screener with no limit</li><li>Personal and research use</li></ul>
 <a class="btn" href="#quickstart">Start with the docs</a></div>
 <div class="card pro"><div class="tag">Pro</div><h3>For teams and products</h3><div class="price">$19.99<small> / month, cancel any time</small></div>
-<ul><li>Everything in Free</li><li>Search: 100 results per request</li><li>Screen: 200 names per request</li><li>Deep fuzzy-match candidate search</li><li>Commercial use</li><li>Email support</li></ul>
+<ul><li><b>Ongoing monitoring:</b> names rechecked against every nightly build, with email or webhook alerts on new matches, amendments and delistings</li><li>Screen: {P['screen']} names per request</li><li>Search: {P['search']} results per request</li><li>{P['candidates']} candidates considered per name, so more distant spelling variants surface</li><li>Commercial use</li><li>Email support</li></ul>
 <a class="btn warm" href="{site_url}api/subscribe">Subscribe</a> <a class="btn" href="{site_url}api/portal">Manage subscription</a></div>
 </div>
-<p class="meta">Pro keys are issued on the page you land on after checkout, and can be re-shown by reopening that link. Send the key as an <code>x-api-key</code> header or <code>?key=</code> parameter. <code>GET me</code> confirms the tier. Keys deactivate automatically when a subscription ends. Tax is calculated at checkout.</p>
+<p class="meta">Screening itself is free and unlimited; the tiers differ in how many names fit in one request, how deep the candidate search goes, and whether names can be kept under watch. Pro keys are issued on the page you land on after checkout, and can be re-shown by reopening that link. Send the key as an <code>x-api-key</code> header rather than <code>?key=</code>, which leaks into logs and browser history. <code>GET me</code> confirms the tier. Keys deactivate automatically when a subscription ends. Tax is calculated at checkout.</p>
 
 <h2 id="quickstart">Quick start</h2>
 <div class="tabs"><button class="on">curl</button><button>Python</button><button>JavaScript</button></div>
@@ -241,34 +270,71 @@ curl "{ex}search?q=sberbank"
 # one record
 curl "{ex}party/ofa:31695"
 
-# screen a list of names (Pro key optional; raises the limit to 500)
+# screen a list of names ({F['screen']} per request free, {P['screen']} with a Pro key)
 curl -X POST "{ex}screen" -H "content-type: application/json" \\
-  -H "x-api-key: YOUR_KEY" \\
   -d '{{"names":["Sberbank of Russia","John Smith"],"threshold":0.85}}'
 
-# rate limit: 429 with a retry-after header if you go too fast; send the key as a header, not ?key=</code></pre>
+# rate limit: {RATE_PER_MIN} requests a minute per IP, then 429 with a retry-after header</code></pre>
 <pre><code>import requests
 BASE = "{ex}"
 hits = requests.get(BASE + "search", params={{"q": "sberbank"}}).json()["results"]
 rec  = requests.get(BASE + "party/" + hits[0]["id"]).json()
-scr  = requests.post(BASE + "screen", json={{"names": ["Sberbank of Russia", "John Smith"]}},
-                     headers={{"x-api-key": "YOUR_KEY"}}).json()
+scr  = requests.post(BASE + "screen", json={{"names": ["Sberbank of Russia", "John Smith"]}}).json()
 for r in scr["results"]:
     print(r["name"], "->", [(m["name"], m["score"]) for m in r["matches"]])</code></pre>
 <pre><code>const BASE = "{ex}";
 const hits = (await (await fetch(BASE + "search?q=sberbank")).json()).results;
 const rec  = await (await fetch(BASE + "party/" + encodeURIComponent(hits[0].id))).json();
 const scr  = await (await fetch(BASE + "screen", {{
-  method: "POST", headers: {{"content-type": "application/json", "x-api-key": "YOUR_KEY"}},
+  method: "POST", headers: {{"content-type": "application/json"}},
   body: JSON.stringify({{names: ["Sberbank of Russia", "John Smith"]}})
 }})).json();</code></pre>
 
+<h2 id="monitoring">Monitoring <span class="tag">Pro</span></h2>
+<p class="sub">Screening answers a question about today. Monitoring answers it every night without being asked.</p>
+<p>Post the names you want watched. Every nightly build rechecks them against all six lists, and an alert is raised when a watched name starts matching, when a party it already matches is amended, and when one is delisted. Alerts go to an email address, a webhook, or both.</p>
+<pre><code># put a book of counterparties under watch
+curl -X POST "{ex}watchlist" -H "content-type: application/json" \\
+  -H "x-api-key: YOUR_KEY" \\
+  -d '{{"label": "Counterparties Q3",
+       "names": ["Acme Trading LLC", "Ivan Petrov", "Northern Star Shipping"],
+       "threshold": 0.85,
+       "email": "compliance@example.com"}}'
+
+# what changed since a date
+curl "{ex}alerts?since=2026-09-01" -H "x-api-key: YOUR_KEY"
+
+# one watchlist and its current matches
+curl "{ex}watchlist/&lt;id&gt;" -H "x-api-key: YOUR_KEY"</code></pre>
+<p class="meta">Matching runs inside the nightly build rather than at request time, so the response to a POST is a confirmation rather than results; the matches appear on the watchlist itself. Set <code>near</code> to true to also be told about matches below your threshold, which is useful while you are calibrating. Deleting a watchlist deletes its names and its match history with it.</p>
+
 <h2>Query endpoints</h2>
 <table><tr><th>Endpoint</th><th>What it does</th></tr>
-<tr><td><code>GET search?q=&lt;text&gt;&amp;limit=20</code></td><td>Name and alias search across all lists. Diacritic-insensitive, token-based, scored 0 to 1.</td></tr>
+<tr><td><code>GET search?q=&lt;text&gt;&amp;limit={F['search']}</code></td><td>Name and alias search across all lists. Accent-insensitive, word order ignored, scored 0 to 1.</td></tr>
 <tr><td><code>GET party/&lt;id&gt;</code></td><td>One merged party. Ids look like <code>ofa:12345</code>, <code>eu:EU-123</code>, <code>uk:UK-RUS0001</code>.</td></tr>
-<tr><td><code>POST screen</code></td><td>Body <code>{{"names": [...], "threshold": 0.85}}</code>. Returns up to five scored matches per name. Names are processed in memory and not stored. For large lists use the <a href="{site_url}screen.html">in-browser screener</a>, which runs on your own machine and has no limit.</td></tr>
+<tr><td><code>POST screen</code></td><td>Body <code>{{"names": [...], "threshold": 0.85}}</code>. Returns up to five scored matches per name, and an empty array for a name with none, so the response lines up with your input. Names are processed in memory and not stored. For large lists use the <a href="{site_url}screen.html">in-browser screener</a>, which runs on your own machine and has no limit.</td></tr>
+<tr><td><code>GET watchlist</code> · <code>POST watchlist</code> · <code>GET watchlist/&lt;id&gt;</code> · <code>DELETE watchlist/&lt;id&gt;</code></td><td>Names monitored against every nightly build. Pro.</td></tr>
+<tr><td><code>GET alerts?since=&lt;date&gt;</code></td><td>Additions, amendments and delistings affecting watched names. Filter by <code>type</code> or <code>list_id</code>. Pro.</td></tr>
 <tr><td><code>GET me</code></td><td>Tier and limits for the supplied key.</td></tr></table>
+
+<h2>Matching and thresholds</h2>
+<p>Names are compared after accents are stripped and punctuation flattened, with word order ignored, so <code>Putin Vladimir</code> and <code>Vladimir Putin</code> score alike and the French spelling <code>Poutine</code> still matches. Each word is then weighted by how rare it is across the whole corpus: a surname carried by hundreds of designated parties counts for little, a distinctive one counts for a lot. Words in the listed name that your query does not account for pull the score down, so matching two words of a four-word name is a weak match even when both are exact.</p>
+<table><tr><th>Threshold</th><th>What to expect</th></tr>
+<tr><td>0.90 and up</td><td>Close to exact. Few false positives, will miss transliteration variants.</td></tr>
+<tr><td>0.85</td><td>The default. Catches spelling and word-order variation without burying you.</td></tr>
+<tr><td>0.75 to 0.80</td><td>A wider net for a review queue. Expect more to clear.</td></tr>
+<tr><td>Below 0.70</td><td>Research only, not a screening posture.</td></tr></table>
+<p class="meta">Scores are comparable between requests but not across versions of the matcher; when the scoring changes it is noted here.</p>
+
+<h2>Limits and errors</h2>
+<table><tr><th>Status</th><th>What it means</th></tr>
+<tr><td>400</td><td>The body was not JSON, or <code>names</code> was missing or empty.</td></tr>
+<tr><td>401</td><td>The key is unknown or no longer active.</td></tr>
+<tr><td>403</td><td>A Pro feature was requested without a Pro key.</td></tr>
+<tr><td>405</td><td>Wrong method. Screening is POST, the rest are GET.</td></tr>
+<tr><td>413</td><td>Too many names for your tier in one request; the cap is in the response.</td></tr>
+<tr><td>429</td><td>Over {RATE_PER_MIN} requests a minute from one IP. A <code>retry-after</code> header says how long to wait.</td></tr></table>
+<p class="meta">Errors carry an <code>error</code> field in plain language and, where there is one, a <code>hint</code> saying what to do instead. A very large batch can return <code>partial: true</code>, meaning some names were matched against a reduced candidate set; split the batch and treat that result as incomplete.</p>
 
 <h2>Static files</h2>
 <p class="sub">Regenerated nightly. Cache them; they change once a day.</p>
@@ -296,10 +362,10 @@ const scr  = await (await fetch(BASE + "screen", {{
   "page": "...", "map": "...#p=ofa:31695"
 }}</code></pre>
 
-<div class="callout">Name matching is approximate by design. A match means "look closer", never "this is the same party". Confirm against the official record, linked from every result, before acting. Full terms on the <a href="{site_url}terms.html">terms page</a>.</div>
+<div class="callout">Name matching is approximate by design. A match means "look closer", never "this is the same party", and an empty result is not a clearance. Ownership is not resolved: a company owned at or above 50 percent by designated parties is blocked under the OFAC 50 percent rule even though it appears on no list, and it will not be returned here. Confirm against the official record, linked from every result, before acting. Full terms on the <a href="{site_url}terms.html">terms page</a>.</div>
 <h2>Terms</h2><p class="sub">Source data are official government publications; the merged form is released CC0. No uptime guarantee on the free tier; please cache and keep request volume reasonable. Support for Pro subscribers at <a href="mailto:hello@sanctionscope.com">hello@sanctionscope.com</a>.</p>
 {tabs_js}"""
-    doc = theme.shell("API", f"Free JSON API for the merged US, EU, UK, UN, Australian and Canadian sanctions lists: {meta['parties']:,} geocoded parties with cross-list relationships. Pro tier for higher limits.", body, site_url, site_url + "api/", on="API", built=meta["date"], narrow=False)
+    doc = theme.shell("API", f"Sanctions screening and monitoring API across the US, EU, UK, UN, Australian and Canadian lists: {meta['parties']:,} merged parties, free tier with no key, Pro monitoring from $19.99 a month.", body, site_url, site_url + "api/", on="API", built=meta["date"], narrow=False)
     os.makedirs(os.path.join(SITE, "api"), exist_ok=True)
     with open(os.path.join(SITE, "api", "index.html"), "w", encoding="utf-8") as f: f.write(doc)
     return len(parties), len(shards), n_shards_search
