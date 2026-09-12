@@ -3,105 +3,160 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Screen a list · SanctionScope</title>
-<meta name="description" content="Screen a list of names against the US, EU, UK, UN, Australian and Canadian sanctions lists, entirely in your browser. Nothing is uploaded.">
+<meta name="description" content="Screen a list of names against the US, EU, UK, UN, Australian and Canadian sanctions lists entirely in your browser. The names never leave your machine.">
+<link rel="canonical" href="https://sanctionscope.com/screen.html">
+<meta property="og:title" content="Screen a list"><meta property="og:description" content="Screen names against six sanctions lists in your browser. Nothing is uploaded.">
+<meta property="og:image" content="og.png"><meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%2316181a'/><circle cx='16' cy='16' r='5' fill='%23f4f4f1'/></svg>">
+<!-- Colours and chrome come from the same two files the rest of the site uses, both written by the
+     nightly build. This page used to carry its own copy of each, which is why it stayed on the old
+     palette and the old navigation after everything else had moved. -->
+<link rel="stylesheet" href="palette.css">
+<link rel="stylesheet" href="theme.css">
 <style>
-:root{--bg:#f7f5f1;--bg-2:#ffffff;--bg-3:#f0ede7;--ink:#1b2331;--ink-2:#5b6472;--ink-3:#8c93a0;--line:#e0dbd2;--line-2:#cbc5b9;
-      --accent:#b1700f;--accent-2:#8f5a08;--accent-fill:#e9a33c;--good:#2c7a5b;--bad:#b0392f;--blue:#2f5fb5}
-*{box-sizing:border-box}html{scroll-behavior:smooth}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
-a{color:var(--accent)}a:hover{color:var(--accent-2)}
-code,pre,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.88em}
-code{background:var(--bg-3);border:1px solid var(--line);border-radius:4px;padding:1px 6px}
-pre{background:var(--bg-3);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow:auto;line-height:1.5}pre code{background:none;border:0;padding:0}
-.nav{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.94);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
-.nav .in{max-width:1120px;margin:0 auto;padding:0 20px;height:56px;display:flex;align-items:center;gap:22px;font-size:15px}
-.nav a{color:var(--ink-2);text-decoration:none}.nav a:hover,.nav a.on{color:var(--ink)}
-.nav .brand{color:var(--ink);font-size:19px;letter-spacing:.01em;margin-right:8px}.nav .brand b{color:var(--accent);font-weight:400}
-.nav .grow{flex:1}.nav .cta{background:var(--accent-fill);color:#2b1c02;padding:7px 14px;border-radius:6px;font-weight:500}.nav .cta:hover{background:#f0b862;color:#2b1c02}
-main{max-width:1120px;margin:0 auto;padding:36px 20px 72px}
-.narrow{max-width:820px}
-h1{font-size:38px;font-weight:400;letter-spacing:-.01em;line-height:1.15;margin:0 0 10px}
-h2{font-size:22px;font-weight:400;margin:44px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
-h3{font-size:17px;font-weight:600;margin:22px 0 8px}
-.lede{font-size:19px;color:var(--ink-2);margin:0 0 26px;max-width:760px}
-.sub{color:var(--ink-2)}.meta{color:var(--ink-3);font-size:13px}.small{font-size:14px}
-.btn{display:inline-block;background:var(--bg-2);border:1px solid var(--line-2);color:var(--ink);padding:9px 16px;border-radius:6px;text-decoration:none;font-size:15px;cursor:pointer;font-family:inherit}
-.btn:hover{border-color:var(--accent);color:var(--ink)}.btn.warm{background:var(--accent-fill);color:#2b1c02;border-color:var(--accent);font-weight:500}.btn.warm:hover{background:var(--accent-2)}
-.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;margin:18px 0}
-.card{background:var(--bg-2);border:1px solid var(--line);border-radius:10px;padding:22px 22px 20px}
-.card h3{margin:0 0 4px;font-size:18px;font-weight:500}.card .price{font-size:32px;margin:10px 0 2px}.card .price small{font-size:14px;color:var(--ink-2)}
-.card ul{list-style:none;padding:0;margin:14px 0 18px}.card li{padding:6px 0;border-top:1px solid var(--line);font-size:15px}.card li:first-child{border-top:0}
-.card.pro{border-color:var(--accent);box-shadow:0 0 0 1px rgba(177,112,15,.18) inset}.card .tag{font-size:12px;color:var(--accent);letter-spacing:.06em;text-transform:uppercase}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:22px 0}
-.stat{background:var(--bg-2);border:1px solid var(--line);border-radius:8px;padding:14px 16px}.stat b{display:block;font-size:26px;font-weight:400}.stat span{color:var(--ink-2);font-size:13px}
-table{border-collapse:collapse;width:100%;font-size:15px;margin:8px 0}td,th{text-align:left;padding:9px 10px;border-top:1px solid var(--line);vertical-align:top}th{color:var(--ink-3);font-weight:500;font-size:13px;letter-spacing:.04em}tr:first-child td{border-top:0}
-td.n{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink-2);white-space:nowrap}
-ul.plain{list-style:none;padding:0;margin:0}ul.plain li{padding:7px 0;border-top:1px solid var(--line)}ul.plain li:first-child{border-top:0}
-dl{display:grid;grid-template-columns:150px 1fr;gap:8px 14px;font-size:15px}dt{color:var(--ink-3)}dd{margin:0;word-break:break-word}
-.tabs{display:flex;gap:4px;margin:14px 0 0}.tabs button{background:var(--bg-2);border:1px solid var(--line);border-bottom:0;color:var(--ink-2);padding:6px 12px;border-radius:6px 6px 0 0;cursor:pointer;font:inherit;font-size:14px}.tabs button.on{color:var(--ink);background:var(--bg-3)}
-.tabs+pre{margin-top:0;border-top-left-radius:0}
-.callout{background:var(--bg-2);border-left:3px solid var(--accent);padding:12px 16px;border-radius:0 8px 8px 0;margin:16px 0;color:var(--ink-2)}
-.cols{columns:2;column-gap:30px}
-footer{border-top:1px solid var(--line);margin-top:40px}
-footer .in{max-width:1120px;margin:0 auto;padding:26px 20px 34px;display:flex;flex-wrap:wrap;gap:12px 28px;align-items:center;font-size:14px;color:var(--ink-3)}
-footer a{color:var(--ink-2);text-decoration:none}footer a:hover{color:var(--ink)}footer .grow{flex:1;min-width:200px}
-@media(max-width:720px){.nav .in{height:auto;flex-wrap:wrap;padding:10px 16px;gap:10px 16px}.nav .brand{width:100%}h1{font-size:30px}.cols{columns:1}dl{grid-template-columns:1fr}main{padding:24px 16px 56px}}
-textarea{width:100%;min-height:180px;background:var(--bg-3);border:1px solid var(--line);color:var(--ink);padding:12px;border-radius:8px;font:14px ui-monospace,Menlo,Consolas,monospace}
-input[type=range]{accent-color:var(--accent)}label{font-size:14px;color:var(--ink-2)}
-.hit{color:var(--bad)}.clear{color:var(--good)}.score{font-variant-numeric:tabular-nums;color:var(--ink-2)}
-#status{font-size:14px;color:var(--ink-2)}
+  /* Only what is specific to this page. */
+  textarea{width:100%;min-height:190px;background:var(--bg-3);border:1px solid var(--line);color:var(--ink);
+           padding:12px;border-radius:4px;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  textarea:focus{outline:2px solid var(--ink);outline-offset:1px}
+  input[type=range]{accent-color:var(--ink);vertical-align:middle}
+  .ctl{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:12px 0 0}
+  .ctl label{font-size:14px;color:var(--ink-2);display:flex;align-items:center;gap:8px}
+  #thv{font-variant-numeric:tabular-nums;color:var(--ink)}
+  #thword{color:var(--ink-3);font-size:13px;min-width:8ch}
+  #status{font-size:14px;color:var(--ink-3)}
+  .hit{color:var(--bad)}
+  .clear{color:var(--ink-3)}
+  .score{font-variant-numeric:tabular-nums;color:var(--ink-2);text-align:right;white-space:nowrap}
+  #out table{margin-top:22px}
+  #out td{font-size:14px}
 </style>
 </head>
 <body>
-<div class="nav"><div class="in"><a class="brand" href="./">Sanction<b>Scope</b></a><a href="./">Map</a><a href="screen.html" class=on>Screen a list</a><a href="vessels/">Vessels</a><a href="api/">API</a><a href="about.html">Methods</a><span class="grow"></span><a class="cta" href="api/subscribe">API Pro</a></div></div>
+<div class="nav"><div class="in"><a class="brand" href="./">Sanction<b>Scope</b></a><a href="./">Map</a><a href="screen.html" class=on>Screen a list</a><a href="api/">API</a><a href="about.html">Coverage</a><span class="grow"></span><a class="cta" href="api/#pricing">Pricing</a></div></div>
 <main class="narrow">
-<h1>Screen a list</h1>
-<p class="lede">Paste names, one per line, or drop a CSV (first column is used). Matching runs in your browser against all six lists; nothing is sent anywhere. Name matching only: confirm every hit against the official record before acting.</p>
+<h1>Screen a list without uploading it</h1>
+<p class="lede">Matching runs in your browser against all six lists. The names you paste never leave your machine, are never sent to this site, and are not logged anywhere. Paste one name per line, or drop in a CSV and the first column is used.</p>
+
 <textarea id="names" placeholder="Sberbank of Russia&#10;Ivan Ivanov&#10;Acme Trading FZE"></textarea>
-<div class="row">
+<div class="ctl">
   <button class="btn warm" id="run">Screen</button>
   <input type="file" id="file" accept=".csv,.txt" style="display:none"><button class="btn" id="pick">Load CSV</button>
-  <label>Threshold <input type="range" id="th" min="0.6" max="1" step="0.01" value="0.85"> <b id="thv">0.85</b></label>
+  <label for="th">Threshold
+    <input type="range" id="th" min="0.6" max="1" step="0.01" value="0.85">
+    <b id="thv">0.85</b> <span id="thword">balanced</span>
+  </label>
   <button class="btn" id="dl" style="display:none">Download results CSV</button>
-  <span id="status">Loading the index…</span>
 </div>
+<p id="status">Loading the index…</p>
 <div id="out"></div>
+
+<h2>How the matching works</h2>
+<p>Names are compared after accents are stripped and punctuation flattened, with word order ignored, so <code>Putin Vladimir</code> and <code>Vladimir Putin</code> score alike. Each word is weighted by how rare it is across the whole list: a surname carried by hundreds of designated parties counts for little, a distinctive one counts for a lot. Words in the listed name that your query does not account for pull the score down, so matching two words of a four-word name stays weak even when both are exact.</p>
+<p class="meta">Raise the threshold for fewer false positives and more missed transliterations; lower it for a wider review queue. Below 0.70 is research, not screening.</p>
+
+<div class="callout">Name matching is approximate by design. A match means "look closer", never "this is the same party", and an empty result is not a clearance. Ownership is not resolved: a company owned at or above 50 percent by designated parties is blocked under the OFAC 50 percent rule even though it appears on no list, and it will not be found here. Confirm every hit against the official record before acting.</div>
+<p class="meta">Screening the same names on a schedule, or from your own software? The <a href="api/">API</a> does this in one request, and Pro rechecks a list against every nightly build for you.</p>
 </main>
-<footer><div class="in"><span class="grow">SanctionScope · US, EU, UK, UN, Australian and Canadian sanctions lists on one map. Not legal advice; verify against the official record.</span>
-<a href="programs/">Programs</a><a href="countries/">Countries</a><a href="parties/">Parties</a><a href="api/v1/feed.xml">RSS</a><a href="terms.html">Terms</a><a href="privacy.html">Privacy</a><a href="mailto:hello@sanctionscope.com">Contact</a></div></footer>
+
+<footer><div class="in"><span class="grow">SanctionScope. US, EU, UK, UN, Australian and Canadian sanctions lists on one map. Not legal advice; verify against the official record.</span>
+<a href="programs/">Programs</a><a href="countries/">Countries</a><a href="parties/">Parties</a><a href="vessels/">Vessels</a><a href="api/v1/feed.xml">RSS</a><a href="terms.html">Terms</a><a href="privacy.html">Privacy</a><a href="mailto:hello@sanctionscope.com">Contact</a></div></footer>
+
 <script>
 const LEGAL=new Set("LLC LTD LIMITED INC CORP CORPORATION CO COMPANY GMBH AG SA SAS SARL BV NV PLC PJSC JSC OJSC CJSC OAO ZAO OOO AO PAO LLP LP SRL SPA PTE PTY PVT FZE FZCO THE OF AND PUBLIC JOINT STOCK OPEN CLOSED".split(" "));
 const norm=s=>(s||"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/[^A-Z0-9 ]+/g," ").replace(/\s+/g," ").trim();
 const tokens=s=>norm(s).split(" ").filter(t=>t&&!LEGAL.has(t));
+
 function jw(a,b){if(a===b)return 1;const la=a.length,lb=b.length;if(!la||!lb)return 0;const range=Math.max(0,Math.floor(Math.max(la,lb)/2)-1);const ma=new Array(la).fill(false),mb=new Array(lb).fill(false);let m=0;
 for(let i=0;i<la;i++){const lo=Math.max(0,i-range),hi=Math.min(lb-1,i+range);for(let j=lo;j<=hi;j++)if(!mb[j]&&a[i]===b[j]){ma[i]=mb[j]=true;m++;break;}}if(!m)return 0;let t=0,k=0;for(let i=0;i<la;i++)if(ma[i]){while(!mb[k])k++;if(a[i]!==b[k])t++;k++;}
 const j=(m/la+m/lb+(m-t/2)/m)/3;let l=0;while(l<4&&a[l]===b[l])l++;return j+l*0.1*(1-j);}
-function scoreParty(q,p){const qt=tokens(q);if(!qt.length)return 0;let best=0;
-  for(const name of [p.n,...(p.alt||[])]){const nt=tokens(name);if(!nt.length)continue;
-    let sum=0;for(const a of qt){let m=0;for(const b of nt){const s=a===b?1:jw(a,b);if(s>m)m=s;}sum+=m>=0.8?m:m*0.5;}
-    const cov=sum/qt.length, extra=Math.max(0,nt.length-qt.length);
-    const s=cov*Math.max(0.8,1-0.04*extra);
-    if(s>best)best=s;if(best>=0.999)break;}
-  return best;}
+
 let INDEX=null,TOK=null;
-async function load(){const r=await fetch('api/v1/index.json');INDEX=await r.json();TOK=new Map();INDEX.forEach((p,i)=>{const seen=new Set();for(const name of [p.n,...(p.alt||[])])for(const t of tokens(name))if(t.length>1&&!seen.has(t)){seen.add(t);if(!TOK.has(t))TOK.set(t,[]);TOK.get(t).push(i);}});
-  document.getElementById('status').textContent=`Index ready: ${INDEX.length.toLocaleString()} parties.`;}
-function candidates(q,cap=300){const qt=tokens(q);if(!qt.length)return [];const lists=qt.map(t=>TOK.get(t)||[]).filter(l=>l.length).sort((a,b)=>a.length-b.length);const seen=new Map();for(const l of lists)for(const i of l)seen.set(i,(seen.get(i)||0)+1);return [...seen.entries()].sort((a,b)=>b[1]-a[1]).slice(0,cap).map(([i])=>INDEX[i]);}
+
+// Every token is weighted by how many parties carry it, which the token index already knows.
+// Without this, "Maria Gonzalez" matches half a dozen unrelated people because GONZALEZ and MARIA
+// count for as much as a distinctive surname does. Same scoring the API uses.
+const IDF_MIN=0.5, IDF_MAX=8, COVERAGE_WEIGHT=0.35, TOKEN_FLOOR=0.86;
+function idfOf(t){const l=TOK&&TOK.get(t);const df=l?l.length:0;
+  if(!df)return IDF_MAX;
+  return Math.max(IDF_MIN,Math.min(IDF_MAX,Math.log(INDEX.length/df)));}
+
+function scoreParty(q,p){
+  const qt=tokens(q); if(!qt.length)return 0;
+  const qw=qt.map(idfOf), qTot=qw.reduce((a,b)=>a+b,0)||1;
+  let best=0;
+  for(const name of [p.n,...(p.alt||[]).slice(0,6)]){
+    const nt=tokens(name); if(!nt.length)continue;
+    const nw=nt.map(idfOf), nTot=nw.reduce((a,b)=>a+b,0)||1;
+    const used=new Array(nt.length).fill(false);
+    let mq=0,mn=0;
+    for(let i=0;i<qt.length;i++){
+      let bj=-1,bs=0;
+      for(let j=0;j<nt.length;j++){ if(used[j])continue; const s=qt[i]===nt[j]?1:jw(qt[i],nt[j]); if(s>bs){bs=s;bj=j;} }
+      if(bj>=0&&bs>=TOKEN_FLOOR){ used[bj]=true; mq+=qw[i]*bs; mn+=nw[bj]*bs; }
+    }
+    if(!mq)continue;
+    const s=Math.pow(mq/qTot,1-COVERAGE_WEIGHT)*Math.pow(mn/nTot,COVERAGE_WEIGHT);
+    if(s>best)best=s;
+    if(best>=0.999)break;
+  }
+  return best;
+}
+
+async function load(){
+  const r=await fetch('api/v1/index.json');INDEX=await r.json();
+  TOK=new Map();
+  INDEX.forEach((p,i)=>{const seen=new Set();for(const name of [p.n,...(p.alt||[])])for(const t of tokens(name))if(t.length>1&&!seen.has(t)){seen.add(t);if(!TOK.has(t))TOK.set(t,[]);TOK.get(t).push(i);}});
+  document.getElementById('status').textContent=`Ready. ${INDEX.length.toLocaleString()} parties loaded into this browser tab.`;
+}
+
+// Candidate generation prefers the rarest tokens in the query: pulling the posting list for
+// "BANK" or "MOHAMMED" first wastes the cap on parties that were never going to score.
+function candidates(q,cap=400){
+  const qt=[...new Set(tokens(q))];if(!qt.length)return [];
+  const lists=qt.map(t=>TOK.get(t)||[]).filter(l=>l.length).sort((a,b)=>a.length-b.length).slice(0,4);
+  const seen=new Map();
+  for(const l of lists)for(const i of l)seen.set(i,(seen.get(i)||0)+1);
+  return [...seen.entries()].sort((a,b)=>b[1]-a[1]).slice(0,cap).map(([i])=>INDEX[i]);
+}
+
 const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let RESULTS=[];
-function run(){if(!INDEX)return;const th=+document.getElementById('th').value;const names=document.getElementById('names').value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
-  RESULTS=names.map(name=>{const hits=candidates(name).map(p=>({p,score:scoreParty(name,p)})).filter(x=>x.score>=th).sort((a,b)=>b.score-a.score).slice(0,5);return {name,hits};});
+
+function run(){
+  if(!INDEX)return;
+  const th=+document.getElementById('th').value;
+  const names=document.getElementById('names').value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  if(!names.length){document.getElementById('status').textContent='Paste some names first.';return;}
+  RESULTS=names.map(name=>{
+    const hits=candidates(name).map(p=>({p,score:scoreParty(name,p)})).filter(x=>x.score>=th).sort((a,b)=>b.score-a.score).slice(0,5);
+    return {name,hits};
+  });
   const flagged=RESULTS.filter(r=>r.hits.length).length;
-  document.getElementById('status').textContent=`${names.length} screened, ${flagged} flagged at threshold ${th}.`;
+  document.getElementById('status').textContent=`${names.length.toLocaleString()} screened, ${flagged.toLocaleString()} flagged at threshold ${th.toFixed(2)}. Nothing left this browser.`;
   document.getElementById('dl').style.display=RESULTS.length?'':'none';
-  document.getElementById('out').innerHTML=`<table><tr><th>Name</th><th>Result</th><th>Best match</th><th class="score">Score</th><th>Listed by</th><th>Programs</th></tr>`+RESULTS.map(r=>r.hits.length?r.hits.map((h,i)=>`<tr>${i===0?`<td rowspan="${r.hits.length}">${esc(r.name)}</td><td rowspan="${r.hits.length}" class="hit">possible match</td>`:''}<td><a href="#p=${encodeURIComponent(h.p.id)}" target="_blank">${esc(h.p.n)}</a> <span class="muted">${esc(h.p.t)}${h.p.cc?', '+esc(h.p.cc):''}</span></td><td class="score">${h.score.toFixed(2)}</td><td>${esc(h.p.au.join(', '))}</td><td class="muted">${esc((h.p.p||[]).slice(0,3).join(', '))}</td></tr>`).join(''):`<tr><td>${esc(r.name)}</td><td class="clear">no match</td><td colspan="4"></td></tr>`).join('')+'</table>';}
+  document.getElementById('out').innerHTML=
+    '<table><tr><th>Name</th><th>Result</th><th>Best match</th><th class="score">Score</th><th class="nw">Listed by</th><th>Programs</th></tr>'
+    + RESULTS.map(r=>r.hits.length
+        ? r.hits.map((h,i)=>`<tr>${i===0?`<td rowspan="${r.hits.length}">${esc(r.name)}</td><td rowspan="${r.hits.length}" class="hit nw">possible match</td>`:''}<td><a href="./#p=${encodeURIComponent(h.p.id)}" target="_blank" rel="noopener">${esc(h.p.n)}</a> <span class="meta">${esc(h.p.t)}${h.p.cc?', '+esc(h.p.cc):''}</span></td><td class="score">${h.score.toFixed(2)}</td><td class="nw">${esc((h.p.au||[]).join(', '))}</td><td class="meta">${esc((h.p.p||[]).slice(0,3).join(', '))}</td></tr>`).join('')
+        : `<tr><td>${esc(r.name)}</td><td class="clear nw">no match</td><td colspan="4"></td></tr>`).join('')
+    + '</table>';
+}
+
+function thWord(v){return v>=0.90?'strict':v>=0.82?'balanced':v>=0.75?'wide':'research only';}
+const thEl=document.getElementById('th');
+thEl.oninput=e=>{const v=+e.target.value;document.getElementById('thv').textContent=v.toFixed(2);document.getElementById('thword').textContent=thWord(v);};
 document.getElementById('run').onclick=run;
-document.getElementById('th').oninput=e=>{document.getElementById('thv').textContent=e.target.value;};
 document.getElementById('pick').onclick=()=>document.getElementById('file').click();
-document.getElementById('file').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{const lines=r.result.split(/\r?\n/).map(l=>l.split(/[,;\t]/)[0].replace(/^"|"$/g,'').trim()).filter(Boolean);document.getElementById('names').value=lines.join('\n');};r.readAsText(f);};
-document.getElementById('dl').onclick=()=>{const rows=[['name','result','match','score','id','type','country','authorities','programs']];for(const r of RESULTS){if(!r.hits.length)rows.push([r.name,'no match','','','','','','','']);for(const h of r.hits)rows.push([r.name,'possible match',h.p.n,h.score.toFixed(3),h.p.id,h.p.t,h.p.cc||'',h.p.au.join(' '),(h.p.p||[]).join(' ')]);}
-  const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='screening.csv';a.click();};
+document.getElementById('file').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{const lines=r.result.split(/\r?\n/).map(l=>l.split(/[,;\t]/)[0].replace(/^"|"$/g,'').trim()).filter(Boolean);document.getElementById('names').value=lines.join('\n');document.getElementById('status').textContent=`${lines.length.toLocaleString()} names loaded from the file. It was read in this browser, not uploaded.`;};r.readAsText(f);};
+document.getElementById('dl').onclick=()=>{
+  const rows=[['name','result','match','score','id','type','country','authorities','programs']];
+  for(const r of RESULTS){
+    if(!r.hits.length)rows.push([r.name,'no match','','','','','','','']);
+    for(const h of r.hits)rows.push([r.name,'possible match',h.p.n,h.score.toFixed(3),h.p.id,h.p.t,h.p.cc||'',(h.p.au||[]).join(' '),(h.p.p||[]).join(' ')]);
+  }
+  const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='screening.csv';a.click();URL.revokeObjectURL(a.href);
+};
 load().catch(e=>document.getElementById('status').textContent='Could not load the index: '+e.message);
 </script>
 </body>
