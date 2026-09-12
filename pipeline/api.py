@@ -245,7 +245,7 @@ def build_api(site_url):
     auth_rows = "".join(
         f'<tr><td>{esc(AUTH_NAME.get(a, a))}</td><td>{esc(AUTH_LIST.get(a, ""))}</td>'
         f'<td class="n">{v.get("n", 0):,}</td>'
-        f'<td class="nw">{"loaded" if v.get("ok") else "<b>not loaded</b>"}</td></tr>'
+        f'<td class="nw">{"loaded" if v.get("ok") else "<b class=failed>not loaded</b>"}</td></tr>'
         for a, v in meta["authorities"].items())
     tabs_js = """<script>document.querySelectorAll('.tabs').forEach(t=>{const pres=[];let n=t.nextElementSibling;while(n&&n.tagName==='PRE'){pres.push(n);n=n.nextElementSibling;}
       t.querySelectorAll('button').forEach((b,i)=>b.onclick=()=>{t.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');pres.forEach((p,j)=>p.style.display=i===j?'':'none');});pres.forEach((p,j)=>p.style.display=j?'none':'');});</script>"""

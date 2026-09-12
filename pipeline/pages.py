@@ -225,7 +225,7 @@ def build_pages(site_url):
     src_rows = "".join(
         f'<tr><td class="nw">{esc(AUTH_NAME.get(a,a))}</td><td>{esc(AUTH_LONG.get(a,""))}</td>'
         f'<td class="n">{v.get("n",0):,}</td>'
-        f'<td class="nw">{"loaded" if v.get("ok") else "<b>failed</b>"}</td></tr>'
+        f'<td class="nw">{"loaded" if v.get("ok") else "<b class=failed>failed</b>"}</td></tr>'
         for a, v in auth.items())
     failed = [f'{AUTH_NAME.get(a,a)}: {esc((v.get("error") or "")[:120])}' for a, v in auth.items() if not v.get("ok")]
     body = f"""<h1>Coverage and method</h1><p class="lede">Which lists are loaded, how current they are, and what is done to them between the official source and this site. An independent project, not affiliated with any government.</p>
