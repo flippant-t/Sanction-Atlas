@@ -82,7 +82,7 @@ def load(name):
             with open(os.path.join(DATA, part), encoding="utf-8") as f: obj["parties"] += json.load(f)
     return obj
 
-import theme
+import theme, palette
 
 def page(title, desc, body, rel, canonical, extra_head="", on=""):
     return theme.shell(title, desc, body, rel, canonical, on=on, built=_BUILT.get("d", ""), extra_head=extra_head)
@@ -127,6 +127,10 @@ def build_pages(site_url):
     else:
         with open(os.path.join(DATA, "parties.json"), "w", encoding="utf-8") as f:
             json.dump(data, f, separators=(",", ":"), ensure_ascii=False)
+
+    # One palette for the whole site: the generated pages inline it through theme.py, and the map
+    # links this file. Changing palette.py changes both.
+    write(os.path.join(SITE, "palette.css"), palette.stylesheet())
 
     recent = [e for e in changes.get("events", []) if e["op"] == "+"]
     urls = []

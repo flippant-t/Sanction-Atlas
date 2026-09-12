@@ -1,12 +1,12 @@
-"""Shared chrome for the static pages: CSS, header and footer. Used by pages.py, api.py and screen.html."""
+"""Shared chrome for the static pages: CSS, header and footer. Used by pages.py, api.py and screen.html.
+
+Colours are not defined here. They come from palette.py, which is also what the map loads, so the
+site has one palette rather than one per file."""
 import html
+import palette
 
 CSS = """
-/* Interface is paper, ink and rules. Hue is reserved for data, so a colour on screen always
-   means a category rather than a button. --accent is kept as a name because other files reference
-   it, but it now points at ink. */
-:root{--bg:#f4f4f1;--bg-2:#ffffff;--bg-3:#eaeae6;--ink:#16181a;--ink-2:#55595e;--ink-3:#8a8f95;--line:#dddcd5;--line-2:#bebdb4;
-      --accent:#16181a;--accent-2:#3a3e42;--accent-fill:#16181a;--good:#2e7d5b;--bad:#a03227;--blue:#2f5fb5}
+""" + palette.root_block() + """
 *{box-sizing:border-box}html{scroll-behavior:smooth}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;font-size:17px;line-height:1.6;-webkit-font-smoothing:antialiased}
 a{color:var(--ink);text-decoration-color:var(--line-2);text-underline-offset:2px}a:hover{text-decoration-color:var(--ink)}
