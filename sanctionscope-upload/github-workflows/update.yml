@@ -1,0 +1,53 @@
+name: Nightly update
+
+on:
+  schedule:
+    - cron: "20 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# a manual run while the nightly one is going would race it on the push
+concurrency:
+  group: nightly-data
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r pipeline/requirements.txt
+
+      - name: Download lists, geocode, diff
+        env:
+          SITE_URL: ${{ vars.SITE_URL || 'https://sanctionscope.com/' }}
+          # Pro watchlist monitoring. Absent secrets just skip it; the build still runs.
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
+          RESEND_KEY: ${{ secrets.RESEND_KEY }}
+          ALERT_FROM: ${{ vars.ALERT_FROM || 'alerts@sanctionscope.com' }}
+        run: python pipeline/build.py
+
+      - name: Commit data back to the repo
+        run: |
+          git config user.name "sanctionscope-bot"
+          git config user.email "bot@users.noreply.github.com"
+          # -A so files the build deletes (the old site/data/state.json) are removed from the repo too
+          git add -A site/data state
+          git diff --cached --quiet && exit 0
+          git commit -m "data: $(date -u +%F)"
+          # uploads made while the build ran would reject a plain push; rebase onto them and retry
+          for i in 1 2 3; do
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && git push && exit 0
+            sleep $((i * 15))
+          done
+          exit 1

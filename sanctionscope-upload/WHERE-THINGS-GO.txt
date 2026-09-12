@@ -1,0 +1,17 @@
+Drag each of these folders onto the GitHub "Upload files" page, one at a time.
+GitHub creates the folders and keeps the structure.
+
+  pipeline/          -> drop at the repo root (replaces the 5 files inside)
+  functions/         -> drop at the repo root (adds watchlist.js, alerts.js,
+                        and watchlist/[id].js; existing functions are untouched)
+  tests/             -> drop at the repo root (new folder)
+  collector/         -> drop at the repo root (replaces ais_collect.py)
+  site/              -> drop at the repo root (replaces index.html only)
+  README.md          -> drop at the repo root
+
+  github-workflows/  -> do NOT drag this one. Open
+                        github.com/flippant-t/Sanction-Scope/tree/main/.github/workflows
+                        and upload update.yml there. The folder is renamed here
+                        because macOS hides folders starting with a dot.
+
+After uploading, in the Actions tab run "Nightly update" once.
