@@ -13,18 +13,18 @@ pre{background:var(--bg-3);border:1px solid var(--line);border-radius:4px;paddin
 .nav{position:sticky;top:0;z-index:20;background:var(--bg-2);border-bottom:1px solid var(--line)}
 .nav .in{max-width:1120px;margin:0 auto;padding:0 20px;height:56px;display:flex;align-items:center;gap:22px;font-size:15px}
 .nav a{color:var(--ink-2);text-decoration:none}.nav a:hover,.nav a.on{color:var(--ink)}
-.nav .brand{color:var(--ink);font-size:19px;letter-spacing:.01em;margin-right:8px}.nav .brand b{color:var(--accent);font-weight:400}
-.nav .grow{flex:1}.nav .cta{background:var(--accent-fill);color:#2b1c02;padding:7px 14px;border-radius:5px;font-weight:500}.nav .cta:hover{background:#f0b862;color:#2b1c02}
-main{max-width:1120px;margin:0 auto;padding:36px 20px 72px}
+.nav .brand{color:var(--ink);font-size:18px;letter-spacing:.01em;margin-right:8px}.nav .brand b{color:var(--accent);font-weight:400}
+.nav .grow{flex:1}.nav .cta{background:none;color:var(--accent);border:1px solid var(--line-2);padding:6px 12px;border-radius:5px}.nav .cta:hover{border-color:var(--accent);color:var(--accent-2)}
+main{max-width:1120px;margin:0 auto;padding:28px 20px 64px}
 .narrow{max-width:820px}
 /* Serif at a full page width runs well past a readable line. Prose is capped; tables, code and
    anything laid out in columns keep the full width. */
 main p,main li,main dd{max-width:74ch}
 main table p,main table li,.card li{max-width:none}
-h1{font-size:38px;font-weight:400;letter-spacing:-.01em;line-height:1.15;margin:0 0 10px;max-width:22ch}
-h2{font-size:22px;font-weight:400;margin:44px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+h1{font-size:30px;font-weight:400;letter-spacing:-.005em;line-height:1.2;margin:0 0 10px;max-width:26ch}
+h2{font-size:20px;font-weight:400;margin:34px 0 10px;padding-bottom:8px;border-bottom:1px solid var(--line)}
 h3{font-size:17px;font-weight:600;margin:22px 0 8px}
-.lede{font-size:19px;color:var(--ink-2);margin:0 0 26px;max-width:68ch}
+.lede{font-size:18px;color:var(--ink-2);margin:0 0 22px;max-width:68ch}
 .sub{color:var(--ink-2)}.meta{color:var(--ink-3);font-size:13px}.small{font-size:14px}
 .btn{display:inline-block;background:var(--bg-2);border:1px solid var(--line-2);color:var(--ink);padding:9px 16px;border-radius:5px;text-decoration:none;font-size:15px;cursor:pointer;font-family:inherit}
 .btn:hover{border-color:var(--accent);color:var(--ink)}.btn.warm{background:var(--accent-fill);color:#2b1c02;border-color:var(--accent);font-weight:500}.btn.warm:hover{background:var(--accent-2)}
@@ -36,9 +36,11 @@ h3{font-size:17px;font-weight:600;margin:22px 0 8px}
 .card.pro{border-color:var(--accent)}.card .tag{font-size:13px;color:var(--accent)}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:22px 0}
 .stat{background:var(--bg-2);border:1px solid var(--line);border-radius:6px;padding:14px 16px}.stat b{display:block;font-size:26px;font-weight:400}.stat span{color:var(--ink-2);font-size:13px}
-table{border-collapse:collapse;width:100%;font-size:15px;margin:8px 0}td,th{text-align:left;padding:10px 12px 10px 0;border-top:1px solid var(--line);vertical-align:top}
+table{border-collapse:collapse;width:100%;font-size:15px;margin:8px 0}td,th{text-align:left;padding:10px 18px 10px 0;border-top:1px solid var(--line);vertical-align:top}
+td:last-child,th:last-child{padding-right:0}
 th{color:var(--ink-2);font-weight:500;font-size:14px;border-top:0;border-bottom:1px solid var(--line-2)}
-td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink-2);white-space:nowrap;padding-right:0}
+td.nw,th.nw{white-space:nowrap}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink-2);white-space:nowrap;padding-left:24px}
 ul.plain{list-style:none;padding:0;margin:0}ul.plain li{padding:7px 0;border-top:1px solid var(--line)}ul.plain li:first-child{border-top:0}
 dl{display:grid;grid-template-columns:150px 1fr;gap:8px 14px;font-size:15px}dt{color:var(--ink-3)}dd{margin:0;word-break:break-word}
 .tabs{display:flex;gap:4px;margin:14px 0 0}.tabs button{background:var(--bg-2);border:1px solid var(--line);border-bottom:0;color:var(--ink-2);padding:6px 12px;border-radius:4px 4px 0 0;cursor:pointer;font:inherit;font-size:14px}.tabs button.on{color:var(--ink);background:var(--bg-3)}

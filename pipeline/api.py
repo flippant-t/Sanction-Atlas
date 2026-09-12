@@ -245,7 +245,7 @@ def build_api(site_url):
     auth_rows = "".join(
         f'<tr><td>{esc(AUTH_NAME.get(a, a))}</td><td>{esc(AUTH_LIST.get(a, ""))}</td>'
         f'<td class="n">{v.get("n", 0):,}</td>'
-        f'<td>{"loaded " + esc(meta["date"]) if v.get("ok") else "<b>not loaded</b> · " + esc((v.get("error") or "")[:70])}</td></tr>'
+        f'<td class="nw">{"loaded" if v.get("ok") else "<b>not loaded</b>"}</td></tr>'
         for a, v in meta["authorities"].items())
     tabs_js = """<script>document.querySelectorAll('.tabs').forEach(t=>{const pres=[];let n=t.nextElementSibling;while(n&&n.tagName==='PRE'){pres.push(n);n=n.nextElementSibling;}
       t.querySelectorAll('button').forEach((b,i)=>b.onclick=()=>{t.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');pres.forEach((p,j)=>p.style.display=i===j?'':'none');});pres.forEach((p,j)=>p.style.display=j?'none':'');});</script>"""
@@ -255,9 +255,9 @@ def build_api(site_url):
 
 <h2 id="coverage">What is loaded right now</h2>
 <p class="sub">Every list is downloaded fresh from the publishing authority each night. If a download or parse fails, that authority is marked failed here rather than quietly serving yesterday's copy.</p>
-<table><tr><th>Authority</th><th>List</th><th class="n">Records</th><th>This build</th></tr>
+<table><tr><th>Authority</th><th>List</th><th class="n">Records</th><th class="nw">This build</th></tr>
 {auth_rows}</table>
-<p class="meta">Last rebuilt {esc(meta['date'])}. {meta['parties']:,} merged parties in total, of which {meta.get('multi_listed',0):,} are carried by more than one authority, with {meta['edges']['link']:,} relationships taken from the official records. <a href="{ex}meta.json">meta.json</a> carries the same figures for machines.</p>
+<p class="meta">All figures from the build of {esc(meta['date'])}. {meta['parties']:,} merged parties in total, of which {meta.get('multi_listed',0):,} are carried by more than one authority, with {meta['edges']['link']:,} relationships taken from the official records. <a href="{ex}meta.json">meta.json</a> carries the same figures for machines.</p>
 
 <h2 id="uses">What people use it for</h2>
 <table><tr><th>If you are</th><th>What to call</th></tr>

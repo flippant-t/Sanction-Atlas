@@ -143,8 +143,10 @@ def build_pages(site_url):
         cities = Counter(p.get("city") for p in plist if p.get("city"))
         top = sorted(plist, key=lambda p: -deg[p["id"]])[:25]
         adds = [e for e in recent if code in (e.get("p") or [])][:25]
+        # "cta" was never defined outside the nav, so this link rendered unstyled on every one of
+        # these pages. It is the primary action here, so it uses the shared button class.
         body = f"""<h1>{esc(code)}</h1><p class="sub">{esc(name)} · {len(plist):,} parties on the Consolidated Screening List as of {today}</p>
-<a class="cta" href="{rel}#prog={esc(code)}">View on the map</a>
+<a class="btn warm" href="{rel}#prog={esc(code)}">View on the map</a>
 <h2>Breakdown</h2><table><tr><th>Kind</th><th class="n">Parties</th></tr>{''.join(f'<tr><td>{esc(k)}</td><td class="n">{v:,}</td></tr>' for k,v in types.most_common())}</table>
 <h2>Top countries</h2><table>{''.join(f'<tr><td><a href="{rel}countries/{k.lower()}.html">{esc(iso_name.get(k,k))}</a></td><td class="n">{v:,}</td></tr>' for k,v in cc.most_common(15))}</table>
 <h2>Top cities</h2><table>{''.join(f'<tr><td>{esc(k)}</td><td class="n">{v:,}</td></tr>' for k,v in cities.most_common(15))}</table>
@@ -169,7 +171,7 @@ def build_pages(site_url):
         top = sorted(plist, key=lambda p: -deg[p["id"]])[:25]
         adds = [e for e in recent if e.get("cc") == cc][:25]
         body = f"""<h1>Sanctioned parties in {esc(name)}</h1><p class="sub">{len(plist):,} parties with an address, nationality or flag in {esc(name)} as of {today}</p>
-<a class="cta" href="{rel}#c={cc.lower()}">Open on the map</a>
+<a class="btn warm" href="{rel}#c={cc.lower()}">Open on the map</a>
 <h2>Listed by</h2><table>{''.join(f'<tr><td>{esc(AUTH_NAME.get(k,k))}</td><td class="n">{v:,}</td></tr>' for k,v in aus.most_common())}</table>
 <h2>Programs</h2><table>{''.join(f'<tr><td><a href="{rel}programs/{slug(k)}/">{esc(k)}</a> <span class="meta">{esc(PROGRAM_NAMES.get(k,""))}</span></td><td class="n">{v:,}</td></tr>' for k,v in progs.most_common(15))}</table>
 <h2>Kind</h2><table>{''.join(f'<tr><td>{esc(k)}</td><td class="n">{v:,}</td></tr>' for k,v in types.most_common())}</table>
@@ -198,7 +200,7 @@ def build_pages(site_url):
         if p.get("recs"): dd("Official records", "<br>".join(f'<a href="{esc(r["url"])}" rel="noopener">{esc(AUTH_NAME.get(r["au"], r["au"]))}</a>' for r in p["recs"] if r.get("url")))
         elif p.get("url"): dd("Official record", f'<a href="{esc(p["url"])}" rel="noopener">{esc(p["url"])}</a>')
         body = f"""<h1>{esc(p["n"])}</h1><p class="sub">{esc(p["t"])} · {esc(loc)} · {deg[p["id"]]} linked parties</p>
-<a class="cta" href="{rel}#p={esc(p["id"])}">View on the map</a>
+<a class="btn warm" href="{rel}#p={esc(p["id"])}">View on the map</a>
 <h2>Record</h2><dl>{''.join(rows)}</dl>
 <h2>Linked to</h2><ul class="plain">{''.join(f'<li>{party_link(q,rel)} <span class="meta">{esc(q["t"])}, {esc(q.get("city") or iso_name.get(q.get("cc"),""))}</span></li>' for q in nb)}</ul>"""
         desc = f"{p['n']} ({p['t']}, {loc}) is listed by {', '.join(AUTH_NAME.get(a, a) for a in p.get('au', ['US']))} under {', '.join(p.get('p', [])[:3])}, linked to {deg[p['id']]} other sanctioned parties."
@@ -209,55 +211,74 @@ def build_pages(site_url):
     write(os.path.join(SITE, "parties", "index.html"), page("Most connected sanctioned parties", "Sanctioned entities and individuals ranked by how many other listed parties they are linked to.", body, "../", f"{site_url}parties/", on="Parties"))
     urls.append("parties/")
 
-    # ---------------- about / trust page
+    # ---------------- coverage / trust page
+    # Renamed from "About" to match the nav, and reordered: what is loaded comes first, because
+    # that is the question a reader assessing a data source actually arrives with. The four
+    # counters that used to sit above the table repeated numbers the table already gives.
     AUTH_LONG = {"US": "US Consolidated Screening List (OFAC SDN and non-SDN, BIS Entity List, Denied Persons, Unverified and MEU lists, State Department ISN and AECA)",
                  "EU": "EU Consolidated Financial Sanctions List", "UK": "UK Sanctions List (FCDO)", "UN": "UN Security Council Consolidated List",
                  "AU": "Australia DFAT Consolidated List", "CA": "Canada SEMA and autonomous sanctions list"}
     auth = meta.get("authorities", {})
     inf = Counter(p.get("inf") for p in parties if p.get("inf"))
     n_multi = meta.get("multi_listed", 0)
-    body = f"""<h1>About SanctionScope</h1><p class="lede">Where the data comes from, what we do to it, and what the site does and does not claim. An independent project, not affiliated with any government.</p>
-<div class="stats"><div class="stat"><b>{meta['parties']:,}</b><span>parties</span></div><div class="stat"><b>{sum(1 for v in auth.values() if v.get('ok'))}</b><span>authorities loaded</span></div><div class="stat"><b>{n_multi:,}</b><span>on more than one list</span></div><div class="stat"><b>{meta['with_city']:,}</b><span>placed to a city</span></div></div>
-<h2>Sources, as of this build ({today})</h2>
-<table><tr><th>Authority</th><th>List</th><th class="n">Records</th><th>Status</th></tr>{''.join(f'<tr><td>{esc(AUTH_NAME.get(a,a))}</td><td>{esc(AUTH_LONG.get(a,""))}</td><td class="n">{v.get("n",0):,}</td><td>{"loaded" if v.get("ok") else "failed: " + esc(v.get("error","")[:80])}</td></tr>' for a, v in auth.items())}</table>
-<p class="meta">Every list is downloaded fresh from the publishing authority each night. If a download or parse fails, that authority is skipped for the night and shown here and on the map as failed; nothing stale is silently kept beyond the previous night's copy.</p>
-<h2>What we do to the data</h2>
+    n_ok = sum(1 for v in auth.values() if v.get("ok"))
+    src_rows = "".join(
+        f'<tr><td class="nw">{esc(AUTH_NAME.get(a,a))}</td><td>{esc(AUTH_LONG.get(a,""))}</td>'
+        f'<td class="n">{v.get("n",0):,}</td>'
+        f'<td class="nw">{"loaded" if v.get("ok") else "<b>failed</b>"}</td></tr>'
+        for a, v in auth.items())
+    failed = [f'{AUTH_NAME.get(a,a)}: {esc((v.get("error") or "")[:120])}' for a, v in auth.items() if not v.get("ok")]
+    body = f"""<h1>Coverage and method</h1><p class="lede">Which lists are loaded, how current they are, and what is done to them between the official source and this site. An independent project, not affiliated with any government.</p>
+<h2>Loaded in the build of {today}</h2>
+<table><tr><th class="nw">Authority</th><th>List</th><th class="n">Records</th><th class="nw">Status</th></tr>{src_rows}</table>
+<p class="meta">{meta['parties']:,} merged parties in total, {n_multi:,} of them carried by more than one authority, {meta['with_city']:,} placed to a city. {n_ok} of {len(auth)} lists loaded in this build.</p>
+""" + ("".join(f'<p class="meta">{f}</p>' for f in failed)) + f"""
+<p>Every list is downloaded fresh from the publishing authority each night. If a download or parse fails, that authority is marked failed here and on the map rather than quietly serving an older copy. A source whose record count drops sharply between builds is treated as a broken feed and held back, so a failed download can never look like a mass delisting.</p>
+<h2>What is done to the data</h2>
 <p><b>Merging.</b> {meta['parties']:,} parties on this site come from {sum(v.get('n',0) for v in auth.values()):,} source records. Records from different authorities are merged when their normalised names match: legal suffixes are stripped, word order is ignored for people, and two people are never merged if their published birth years conflict. {n_multi:,} parties currently appear on more than one list. Matching is by name and is approximate; every merged party shows its separate official records so you can check.</p>
 <p><b>Placement.</b> {meta['with_city']:,} parties are placed at a city named in a listed address, using the GeoNames gazetteer. Parties with a country but no recognised city are spread within the country. {sum(inf.values()):,} parties that publish no address at all are placed by inference: {inf.get('program',0):,} from the country of their sanctions program, {inf.get('group',0):,} from a curated table of where armed groups and criminal organisations operate, {inf.get('remarks',0):,} from a country named in their record. Inferred placements are drawn hollow, labelled in the record, and can be switched off.</p>
+<p><b>Name matching.</b> Names are compared after accents are stripped and punctuation flattened, with word order ignored. Each word is weighted by how rare it is across the whole corpus, so a surname carried by hundreds of designated parties counts for little and a distinctive one counts for a lot. Words in the listed name that a query does not account for pull the score down.</p>
 <p><b>Links.</b> "Linked To" relationships are taken verbatim from OFAC remarks. No relationships are inferred.</p>
 <p><b>Categories and the intensity index.</b> The "why listed" groups and the 0 to 10 country intensity index are this site's own visualisation aids, computed from party counts, program counts and recent activity. They are not official classifications or legal assessments.</p>
-<p><b>Change tracking.</b> Additions and removals are detected by comparing each night's build with the previous one, starting from the day the site went live. Designation dates published by the EU, UK, UN, Australian and Canadian lists are shown where available; OFAC does not publish them in the feed we use.</p>
+<p><b>Change tracking.</b> Additions and removals are detected by comparing each night's build with the previous one, starting from the day the site went live. Designation dates published by the EU, UK, UN, Australian and Canadian lists are shown where available; OFAC does not publish them in the feed used here.</p>
 <h2>What this is not</h2>
-<p>Not legal advice, not a compliance tool of record, and not a substitute for the official lists. A name match here means "look closer", never "this is the same person". Confirm against the official record, linked from every party, before acting.</p>
+<p>Not legal advice, not a compliance tool of record, and not a substitute for the official lists. A name match here means "look closer", never "this is the same person", and an empty result is not a clearance. Ownership is not resolved: a company owned at or above 50 percent by designated parties is blocked under the OFAC 50 percent rule even though it appears on no list, and it will not be found here. Confirm against the official record, linked from every party, before acting.</p>
 <h2>Reuse and attribution</h2>
 <p>The source lists are public government publications. The merged dataset is released under CC0 through the <a href="{site_url}api/">API</a>. Attribution to SanctionScope is appreciated, not required.</p>
 <p class="small">Source acknowledgements: US Consolidated Screening List, International Trade Administration, US Department of Commerce. EU Consolidated Financial Sanctions List, European Commission, Directorate-General for Financial Stability, Financial Services and Capital Markets Union. UK Sanctions List, Foreign, Commonwealth and Development Office, used under the Open Government Licence v3.0. UN Security Council Consolidated List, United Nations. Consolidated List, Australian Department of Foreign Affairs and Trade, CC BY 4.0. Consolidated Canadian Autonomous Sanctions List, Global Affairs Canada, Open Government Licence Canada. City coordinates from GeoNames, CC BY 4.0.</p>
 <h2>Contact</h2><p>Corrections and questions: <a href="mailto:hello@sanctionscope.com">hello@sanctionscope.com</a>. See also the <a href="{site_url}terms.html">terms of service</a> and <a href="{site_url}privacy.html">privacy policy</a>.</p>"""
-    write(os.path.join(SITE, "about.html"), page("About", "Where SanctionScope's data comes from, how the six sanctions lists are merged and placed on the map, and what the site does and does not claim.", body, "", f"{site_url}about.html", on="About"))
+    write(os.path.join(SITE, "about.html"), page("Coverage", "Which sanctions lists SanctionScope has loaded and when, how the six authorities' lists are merged, and what the site does and does not claim.", body, "", f"{site_url}about.html", on="Coverage"))
     urls.append("about.html")
 
     # ---------------- vessels page (roster static, positions filled live from /api/v1/vessels)
+    # Reframed around the roster. AIS coverage is terrestrial only and most sanctioned tankers run
+    # dark, so leading with "where they are" put the weakest number at the top of the page and a
+    # column of "never heard" underneath it. The roster is the part that is complete and useful.
     vpath = os.path.join(DATA, "vessels.json")
     if os.path.exists(vpath):
         with open(vpath, encoding="utf-8") as f: roster = json.load(f)["vessels"]
-        rows_html = "".join(f'<tr data-id="{esc(v["id"])}"><td><a href="{("../parties/" + byid[v["id"]]["pg"] + ".html") if byid.get(v["id"], {}).get("pg") else ("../#p=" + esc(v["id"]))}">{esc(v["n"])}</a></td><td>{esc(v.get("imo") or "")}</td><td>{esc(iso_name.get(v.get("cc"), v.get("cc") or ""))}</td><td>{esc(", ".join(AUTH_NAME.get(a, a) for a in v.get("au", [])))}</td><td class="ais">…</td></tr>' for v in sorted(roster, key=lambda v: v["n"]))
-        body = f"""<h1>Sanctioned vessels</h1><p class="lede">{len(roster):,} ships on the US, EU, UK, UN, Australian and Canadian lists with a published IMO number, and where AIS last heard from them. Positions refresh every 15 minutes; a ship that has gone quiet is flagged.</p>
-<div class="stats" id="vstats"><div class="stat"><b>{len(roster):,}</b><span>sanctioned vessels with IMO</span></div><div class="stat"><b id="vseen">…</b><span>with a known position</span></div><div class="stat"><b id="v24">…</b><span>heard in the last 24 h</span></div><div class="stat"><b id="vdark">…</b><span>silent over 7 days</span></div></div>
-<div class="row" style="margin:10px 0"><input class="btn" id="vq" placeholder="Filter by name, IMO, flag" style="min-width:260px"><label class="small"><input type="checkbox" id="vonly"> only ships with a position</label><a class="btn" href="../#kind=Vessel">Open on the map</a></div>
-<table id="vt"><tr><th>Vessel</th><th>IMO</th><th>Flag / country</th><th>Listed by</th><th>Last AIS</th></tr>{rows_html}</table>
-<p class="meta">AIS data via aisstream.io, terrestrial coverage only. Absence of a position is not evidence of anything by itself. Verify every vessel against the official record before acting.</p>
+        rows_html = "".join(f'<tr data-id="{esc(v["id"])}"><td><a href="{("../parties/" + byid[v["id"]]["pg"] + ".html") if byid.get(v["id"], {}).get("pg") else ("../#p=" + esc(v["id"]))}">{esc(v["n"])}</a></td><td class="nw">{esc(v.get("imo") or "")}</td><td>{esc(iso_name.get(v.get("cc"), v.get("cc") or ""))}</td><td>{esc(", ".join(AUTH_NAME.get(a, a) for a in v.get("au", [])))}</td><td class="ais nw">…</td></tr>' for v in sorted(roster, key=lambda v: v["n"]))
+        body = f"""<h1>Sanctioned vessels and their IMO numbers</h1><p class="lede">{len(roster):,} ships designated by the US, EU, UK, UN, Australian or Canadian authorities, with the IMO number published in each record. Look a vessel up before fixing it, and follow any ship through to the authority that listed it.</p>
+<div class="row" style="margin:10px 0"><input class="btn" id="vq" placeholder="Filter by name, IMO, flag" style="min-width:260px"><label class="small"><input type="checkbox" id="vonly"> only ships with a recent position</label><a class="btn" href="../#kind=Vessel">Open on the map</a></div>
+<table id="vt"><tr><th>Vessel</th><th class="nw">IMO</th><th>Flag / country</th><th>Listed by</th><th class="nw">Last AIS</th></tr>{rows_html}</table>
+<h2>About the AIS column</h2>
+<p class="meta" id="aisnote">Loading positions…</p>
+<p class="meta">Positions come from aisstream.io, which is terrestrial only: a receiver has to be within range of the ship. Sanctioned tankers also switch their transponders off routinely, and doing so during a transfer is the point. Most ships here will show no position, and that is expected. An empty AIS column is not evidence about a vessel either way, and a position that is present is not confirmation of identity. Verify every vessel against the official record before acting.</p>
 <script>
 (async()=>{{const t=document.getElementById('vt');let d={{positions:{{}}}};try{{d=await (await fetch('../api/v1/vessels')).json();}}catch{{}}
 const byId={{}};for(const p of Object.values(d.positions||{{}}))if(p.id)byId[p.id]=p;
 const ago=ts=>{{if(!ts)return null;const h=(Date.now()-Date.parse(ts.replace(' ','T')+'Z'))/36e5;return h;}};
-let seen=0,h24=0,dark=0;
-for(const tr of t.querySelectorAll('tr[data-id]')){{const p=byId[tr.dataset.id];const td=tr.querySelector('.ais');if(!p||p.lat==null){{td.textContent='never heard';td.className='ais meta';continue;}}seen++;const h=ago(p.ts);if(h<24)h24++;if(h>168)dark++;
-  td.innerHTML=(h<1?Math.round(h*60)+' min ago':h<48?Math.round(h)+' h ago':Math.round(h/24)+' days ago')+(p.sog!=null?', '+p.sog+' kn':'')+(p.dest?', to '+p.dest.replace(/</g,''):'')+` <a href="../#p=${{encodeURIComponent(tr.dataset.id)}}">map</a>`;if(h>168)td.style.color='#e07a7a';tr.dataset.seen='1';}}
-document.getElementById('vseen').textContent=seen.toLocaleString();document.getElementById('v24').textContent=h24.toLocaleString();document.getElementById('vdark').textContent=dark.toLocaleString();
+let seen=0,h24=0,dark=0;const withPos=[];
+for(const tr of t.querySelectorAll('tr[data-id]')){{const p=byId[tr.dataset.id];const td=tr.querySelector('.ais');if(!p||p.lat==null){{td.textContent='—';td.className='ais nw meta';continue;}}seen++;const h=ago(p.ts);if(h<24)h24++;if(h>168)dark++;
+  td.innerHTML=(h<1?Math.round(h*60)+' min ago':h<48?Math.round(h)+' h ago':Math.round(h/24)+' days ago')+(p.sog!=null?', '+p.sog+' kn':'')+(p.dest?', to '+p.dest.replace(/</g,''):'')+` <a href="../#p=${{encodeURIComponent(tr.dataset.id)}}">map</a>`;if(h>168)td.style.color='#b0392f';tr.dataset.seen='1';tr.dataset.h=h;withPos.push(tr);}}
+// Ships with a position go to the top: alphabetical order buried all of them under thousands of blanks.
+withPos.sort((a,b)=>a.dataset.h-b.dataset.h);
+const head=t.querySelector('tr');for(let i=withPos.length-1;i>=0;i--)head.after(withPos[i]);
+document.getElementById('aisnote').textContent=seen?`${{seen.toLocaleString()}} of ${{{len(roster)}}} ships have a position on record, ${{h24.toLocaleString()}} of them seen in the last 24 hours. Those ships are listed first.`:'No positions on record right now.';
 const f=()=>{{const q=document.getElementById('vq').value.toLowerCase();const only=document.getElementById('vonly').checked;for(const tr of t.querySelectorAll('tr[data-id]')){{const ok=(!q||tr.textContent.toLowerCase().includes(q))&&(!only||tr.dataset.seen);tr.style.display=ok?'':'none';}}}};
 document.getElementById('vq').oninput=f;document.getElementById('vonly').onchange=f;}})();
 </script>"""
-        write(os.path.join(SITE, "vessels", "index.html"), page("Sanctioned vessels and their last AIS position", f"{len(roster):,} sanctioned ships with IMO numbers and where AIS last heard from them, refreshed every 15 minutes.", body, "../", f"{site_url}vessels/"))
+        write(os.path.join(SITE, "vessels", "index.html"), page("Sanctioned vessels and their IMO numbers", f"{len(roster):,} vessels designated by the US, EU, UK, UN, Australian and Canadian authorities, searchable by name, IMO number and flag.", body, "../", f"{site_url}vessels/"))
         urls.append("vessels/")
 
     # ---------------- terms + privacy
@@ -266,7 +287,7 @@ document.getElementById('vq').oninput=f;document.getElementById('vonly').onchang
 <h2>Accuracy and warranty</h2><p>The data is provided as is and as available. We rebuild it nightly from the official sources but do not guarantee that it is complete, current, correctly merged or correctly placed on the map. Cross-list matching and location inference are automated and approximate, and are labelled as such. You are responsible for verifying any result against the official record, which is linked from every party, before relying on it.</p>
 <h2>Limitation of liability</h2><p>To the fullest extent permitted by law, SanctionScope and its operator are not liable for any loss, damage, cost or claim arising from use of or reliance on the site, the API or the data, including decisions to transact or not transact with any party, regulatory outcomes, or business interruption. Our total liability to you for any claim is limited to the amount you paid us in the twelve months before the claim.</p>
 <h2>Free use</h2><p>The site, the in-browser screener and the free API tier may be used without an account, at your own risk, subject to reasonable request volumes. We may rate-limit or block abusive traffic.</p>
-<h2>API Pro subscription</h2><p>API Pro is a monthly subscription billed through Stripe. You receive an API key that raises the request limits described on the <a href="{site_url}api/">API page</a>. Keys are personal to the subscriber and must not be shared or resold. You may cancel at any time through the <a href="{site_url}api/portal">billing portal</a>; access continues until the end of the paid period. Fees are non-refundable except where required by law. Prices are shown before any applicable tax, which Stripe calculates at checkout. We may change prices with 30 days' notice by email.</p>
+<h2>API Pro subscription</h2><p>API Pro is a monthly subscription billed through Stripe. You receive an API key that raises the request limits and unlocks the monitoring features described on the <a href="{site_url}api/">API page</a>. Keys are personal to the subscriber and must not be shared or resold. You may cancel at any time through the <a href="{site_url}api/portal">billing portal</a>; access continues until the end of the paid period. Fees are non-refundable except where required by law. Prices are shown before any applicable tax, which Stripe calculates at checkout. We may change prices with 30 days' notice by email.</p>
 <h2>Acceptable use</h2><p>You may not use the site or API to harass, defame or discriminate against any person, to build a competing sanctions-list product by bulk copying the merged data while representing it as your own, or in any way that breaks the law. The underlying merged dataset is released under CC0; these terms govern use of the service, not ownership of public data.</p>
 <h2>Changes and termination</h2><p>We may change the service, these terms or the data sources at any time. We may suspend keys that breach these terms. Material changes to the terms take effect 30 days after being posted here.</p>
 <h2>Governing law</h2><p>These terms are governed by the laws of the State of Florida, United States, without regard to conflict-of-law rules. Disputes will be brought in the courts of that state.</p>
@@ -274,7 +295,7 @@ document.getElementById('vq').oninput=f;document.getElementById('vonly').onchang
     write(os.path.join(SITE, "terms.html"), page("Terms of service", "Terms for using SanctionScope and its API: what the service is, accuracy, liability, subscriptions and acceptable use.", terms, "", f"{site_url}terms.html"))
     privacy = f"""<h1>Privacy policy</h1><p class="lede">What we collect, which is very little, and why. Last updated {today}.</p>
 <h2>What we do not collect</h2><p>The site sets no cookies of its own and runs no analytics or advertising scripts. Names you type into the in-browser screener are processed on your own device and are never sent to us. Names sent to the screening API are processed in memory to produce a response and are not stored or logged beyond the ordinary short-lived request logs of our hosting provider.</p>
-<h2>What we collect from API Pro subscribers</h2><p>When you subscribe, Stripe collects your email, payment details and billing address under <a href="https://stripe.com/privacy">Stripe's privacy policy</a>; we never see your card number. Stripe passes us your email address and a customer identifier, which we store together with your API key so that we can issue, check and deactivate the key. We keep this for as long as you have an account and for up to 90 days after cancellation, then delete it. We use your email only for service messages such as price changes or outages; no marketing.</p>
+<h2>What we collect from API Pro subscribers</h2><p>When you subscribe, Stripe collects your email, payment details and billing address under <a href="https://stripe.com/privacy">Stripe's privacy policy</a>; we never see your card number. Stripe passes us your email address and a customer identifier, which we store together with your API key so that we can issue, check and deactivate the key. Names you place on a monitoring watchlist are stored with your key so that they can be rechecked against each nightly build, and are deleted when you delete the watchlist or the subscription ends. We keep account data for as long as you have an account and for up to 90 days after cancellation, then delete it. We use your email only for service messages such as alerts, price changes or outages; no marketing.</p>
 <h2>Hosting and processors</h2><p>The site is served by Cloudflare, which processes visitor IP addresses to deliver content and prevent abuse under <a href="https://www.cloudflare.com/privacypolicy/">Cloudflare's privacy policy</a>. Payments are processed by Stripe. Nobody else receives your data.</p>
 <h2>Data about listed parties</h2><p>The names, addresses and other details of sanctioned parties shown on this site are republished from official government sanctions lists in the public interest. If you believe a record about you is inaccurate, the correction has to be made by the listing authority; each record links to its official source. We will correct errors we introduce, such as a wrong merge or placement, on request.</p>
 <h2>Your rights</h2><p>You can ask what we hold about you, ask us to delete it, or cancel your subscription, by emailing <a href="mailto:hello@sanctionscope.com">hello@sanctionscope.com</a>. If you are in the EU, UK or California you have additional statutory rights, which we will honour on request.</p>
