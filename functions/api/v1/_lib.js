@@ -168,8 +168,17 @@ export const preflight = () => new Response(null, { status: 204, headers: {
   "access-control-allow-origin": "*", "access-control-allow-methods": "GET, POST, OPTIONS",
   "access-control-allow-headers": "content-type, x-api-key, authorization", "access-control-max-age": "86400" } });
 
+// Only successful responses from public endpoints are cacheable. Errors and any
+// response that depends on an API key must never land in a shared cache, or one
+// customer's data becomes servable to another. Callers that want caching pass it
+// explicitly via `extra`.
 export function json(obj, status = 200, extra = {}) {
-  return new Response(JSON.stringify(obj), { status, headers: { "content-type": "application/json; charset=utf-8", "access-control-allow-origin": "*", "cache-control": "public, max-age=3600", ...extra } });
+  const cacheable = status === 200 && !("cache-control" in extra);
+  return new Response(JSON.stringify(obj), { status, headers: {
+    "content-type": "application/json; charset=utf-8",
+    "access-control-allow-origin": "*",
+    "cache-control": cacheable ? "public, max-age=3600" : "no-store",
+    ...extra } });
 }
 
 // ---- API keys (Pro tier). Keys live in the KEYS KV namespace: key:<key> -> {tier, email, customer, active}
