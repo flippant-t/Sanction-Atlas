@@ -29,6 +29,12 @@ jobs:
       - name: Download lists, geocode, diff
         env:
           SITE_URL: ${{ vars.SITE_URL || 'https://sanctionscope.com/' }}
+          # Pro watchlist monitoring. Absent secrets just skip it; the build still runs.
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
+          RESEND_KEY: ${{ secrets.RESEND_KEY }}
+          ALERT_FROM: ${{ vars.ALERT_FROM || 'alerts@sanctionscope.com' }}
         run: python pipeline/build.py
 
       - name: Commit data back to the repo
