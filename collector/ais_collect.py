@@ -89,13 +89,20 @@ async def listen(watch_mmsi, imo_wanted, imo2mmsi, positions):
             p.update({"lat": round(pr.get("Latitude", 0), 5), "lon": round(pr.get("Longitude", 0), 5), "sog": pr.get("Sog"), "cog": pr.get("Cog"), "hdg": pr.get("TrueHeading"), "nav": pr.get("NavigationalStatus"), "ts": ts, "id": watch_mmsi[mmsi]})
             tr = p.setdefault("trail", [])
             if not tr or tr[-1][2] != ts: tr.append([p["lat"], p["lon"], ts])
-    # phase 1: worldwide static data only (a small fraction of traffic) to learn IMO -> MMSI
-    n1 = await stream({"APIKey": KEY, "BoundingBoxes": [[[-90, -180], [90, 180]]], "FilterMessageTypes": ["ShipStaticData"]}, handle, max(20, LISTEN // 3))
+    # Phase 1 learns IMO -> MMSI off the worldwide static feed, which is slow: a vessel only broadcasts
+    # static data every few minutes and has to be in terrestrial coverage at that moment. Most of the roster
+    # now carries an MMSI straight from the sanctions record, so phase 1 only needs to cover what is left,
+    # and the time saved goes to phase 2, which is what actually collects positions.
+    unknown = sum(1 for imo in imo_wanted if imo not in imo2mmsi)
+    share = unknown / max(1, len(imo_wanted))
+    t1 = 0 if not unknown else max(15, int(LISTEN * min(0.33, 0.05 + share * 0.3)))
+    print(f"{len(watch_mmsi)} vessels already mapped to an MMSI, {unknown} still unmapped; {t1}s on static, {LISTEN - t1}s on positions")
+    n1 = await stream({"APIKey": KEY, "BoundingBoxes": [[[-90, -180], [90, 180]]], "FilterMessageTypes": ["ShipStaticData"]}, handle, t1) if t1 else 0
     # phase 2: only the vessels we watch, positions and static data
     n2 = 0
     if watch_mmsi:
         mm = list(watch_mmsi)[:5000]
-        n2 = await stream({"APIKey": KEY, "BoundingBoxes": [[[-90, -180], [90, 180]]], "FiltersShipMMSI": mm, "FilterMessageTypes": ["PositionReport", "ShipStaticData"]}, handle, LISTEN - LISTEN // 3)
+        n2 = await stream({"APIKey": KEY, "BoundingBoxes": [[[-90, -180], [90, 180]]], "FiltersShipMMSI": mm, "FilterMessageTypes": ["PositionReport", "ShipStaticData"]}, handle, LISTEN - t1)
     print(f"messages read: {n1} static-phase, {n2} watch-phase")
     return seen["static"], seen["pos"]
 
@@ -107,7 +114,9 @@ def main():
     imo_wanted = {v["imo"]: v["id"] for v in roster if v.get("imo")}
     imo2mmsi = kv_get("ais:imo2mmsi", {})
     positions = kv_get("ais:positions", {})
-    watch_mmsi = {v["mmsi"]: v["id"] for v in roster if v.get("mmsi")}
+    watch_mmsi = {v["mmsi"]: v["id"] for v in roster if v.get("mmsi")}          # from the sanctions record itself
+    for v in roster:                                                            # and remember them, so a later build that drops one keeps the mapping
+        if v.get("imo") and v.get("mmsi"): imo2mmsi.setdefault(v["imo"], v["mmsi"])
     for imo, mmsi in imo2mmsi.items():
         if imo in imo_wanted: watch_mmsi[mmsi] = imo_wanted[imo]
     seen_static, seen_pos = asyncio.run(listen(watch_mmsi, imo_wanted, imo2mmsi, positions))
