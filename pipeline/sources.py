@@ -130,16 +130,25 @@ def parse_uk(raw):
         gid = g(r, "id")
         if not gid: continue
         e = groups.setdefault(gid, {"primary": "", "alias": [], "addr": [], "nat": [], "dob": [], "pob": [], "prog": set(), "type": "", "info": "", "pos": "", "ids": [], "date": "", "flag": ""})
-        nm = joinaddr(g(r, "n6"), g(r, "n1"), g(r, "n2"), g(r, "n3"), g(r, "n4"), g(r, "n5")).replace(",", "") if g(r, "kind").lower().startswith("ind") \
-             else joinaddr(g(r, "n1"), g(r, "n2"), g(r, "n3"), g(r, "n4"), g(r, "n5"), g(r, "n6")).replace(",", "")
-        # individuals: surname is Name 6, so put it last for a natural order
-        if g(r, "kind").lower().startswith("ind"):
+        gt = g(r, "kind").lower()
+        # A designation spans several rows, one per alias, and alias rows usually leave the
+        # "Individual, Entity, Ship" column blank. The type is therefore taken from the group's
+        # first row that states one, and from any later row that agrees; a blank row is ignored.
+        # Assigning unconditionally let the last (blank) alias row overwrite "Individual" with the
+        # "Entity" fallback, which typed every UK person as a company and, because match_key()
+        # builds different keys for people and companies, also stopped UK records merging with the
+        # US, EU, AU and CA listings of the same person.
+        if gt:
+            e["type"] = "Individual" if gt.startswith("ind") else "Vessel" if gt.startswith("ship") else "Entity"
+        # individuals: surname is Name 6, so put it last for a natural reading order
+        kind_is_ind = (e["type"] == "Individual") if not gt else gt.startswith("ind")
+        if kind_is_ind:
+            nm = joinaddr(g(r, "n1"), g(r, "n2"), g(r, "n3"), g(r, "n4"), g(r, "n5"), g(r, "n6")).replace(",", "")
+        else:
             nm = joinaddr(g(r, "n1"), g(r, "n2"), g(r, "n3"), g(r, "n4"), g(r, "n5"), g(r, "n6")).replace(",", "")
         nt = g(r, "ntype").lower()
         if nt.startswith("primary name") and "variation" not in nt and not e["primary"]: e["primary"] = nm
         elif nm and nm not in e["alias"]: e["alias"].append(nm)
-        gt = g(r, "kind").lower()
-        e["type"] = "Individual" if gt.startswith("ind") else "Vessel" if gt.startswith("ship") else "Entity"
         e["prog"].add(g(r, "regime"))
         e["info"] = e["info"] or g(r, "info")
         e["pos"] = e["pos"] or g(r, "pos")
@@ -164,9 +173,14 @@ def parse_uk(raw):
     for gid, e in groups.items():
         name = e["primary"] or (e["alias"][0] if e["alias"] else "")
         if not name: continue
+        # A designation with a passport, national ID or date of birth is a person even when the
+        # source left the type column empty on every row.
+        typ = e["type"]
+        if not typ:
+            typ = "Individual" if (e["dob"] or e["pob"] or any(i.startswith(("Passport", "National ID")) for i in e["ids"])) else "Entity"
         alias = [a for a in e["alias"] if a != name]
         rem = "; ".join(x for x in [e["pos"], e["info"]] if x)
-        r0 = row("UK", gid, name, e["type"], e["prog"], e["addr"], rem, alias, e["nat"], "; ".join(e["dob"]), "; ".join(e["pob"]), "; ".join(e["ids"]),
+        r0 = row("UK", gid, name, typ, e["prog"], e["addr"], rem, alias, e["nat"], "; ".join(e["dob"]), "; ".join(e["pob"]), "; ".join(e["ids"]),
                  f"https://search-uk-sanctions-list.service.gov.uk/designations/{gid}", e["date"])
         r0["vessel_flag"] = e["flag"]
         out.append(r0)
@@ -223,7 +237,10 @@ def parse_au(raw):
         if ntype.startswith("primary") and not e["primary"]: e["primary"] = nm
         elif nm and "script" not in ntype: e["alias"].append(nm)
         elif nm: e["alias"].append(nm)
-        t = (d.get("Type") or "").lower(); e["type"] = "Individual" if t.startswith(("ind", "per")) else "Vessel" if t.startswith("ves") else "Entity"
+        # Same grouped-rows hazard as the UK list: only a row that states a type may set one.
+        t = (d.get("Type") or "").lower()
+        if t:
+            e["type"] = "Individual" if t.startswith(("ind", "per")) else "Vessel" if t.startswith("ves") else "Entity"
         for c in re.split(r"[;/]", d.get("Committees") or d.get("Listing Information") or ""):
             c = clean(c)
             if c: e["prog"].add(c[:40])
@@ -242,7 +259,8 @@ def parse_au(raw):
     for ref, e in groups.items():
         name = e["primary"] or (e["alias"][0] if e["alias"] else "")
         if not name: continue
-        out.append(row("AU", ref, name, e["type"], e["prog"] or {"Autonomous"}, e["addr"], e["info"], [a for a in e["alias"] if a != name], e["nat"], "; ".join(e["dob"]), "; ".join(e["pob"]), "", "", e["date"]))
+        typ = e["type"] or ("Individual" if (e["dob"] or e["pob"]) else "Entity")
+        out.append(row("AU", ref, name, typ, e["prog"] or {"Autonomous"}, e["addr"], e["info"], [a for a in e["alias"] if a != name], e["nat"], "; ".join(e["dob"]), "; ".join(e["pob"]), "", "", e["date"]))
     return out
 
 # ------------------------------------------------------------------ CA
