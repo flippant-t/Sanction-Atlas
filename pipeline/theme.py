@@ -74,7 +74,9 @@ def header(rel, on=""):
     # On a page at the site root, rel is "" and the Map link would come out as href="",
     # which reloads the current page instead of going to the map. "./" is the root there.
     links = "".join(f'<a href="{(rel + h) or "./"}"{" class=on" if k == on else ""}>{k}</a>' for k, h in items)
-    return f'<div class="nav"><div class="in"><a class="brand" href="{rel or "./"}">Sanction<b>Scope</b></a>{links}<span class="grow"></span><a class="cta" href="{rel}api/subscribe">API Pro</a></div></div>'
+    # Points at the pricing section, not at Stripe. Sending a first-time visitor straight to a
+    # checkout asks them to buy something they have not been shown yet.
+    return f'<div class="nav"><div class="in"><a class="brand" href="{rel or "./"}">Sanction<b>Scope</b></a>{links}<span class="grow"></span><a class="cta" href="{rel}api/#pricing">Pricing</a></div></div>'
 
 def footer(rel, built=""):
     return f'''<footer><div class="in"><span class="grow">SanctionScope. US, EU, UK, UN, Australian and Canadian sanctions lists on one map{(", rebuilt " + esc(built)) if built else ""}. Not legal advice; verify against the official record.</span>
