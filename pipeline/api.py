@@ -285,17 +285,15 @@ def build_api(site_url):
 {auth_rows}</table>
 <p class="meta">All figures from the build of {esc(meta['date'])}. {meta['parties']:,} merged parties in total, {meta.get('multi_listed',0):,} carried by more than one authority, {meta['edges']['link']:,} relationships taken from the official records. <a href="{ex}meta.json">meta.json</a> carries the same figures for machines.</p>
 
-<h2 id="pricing">Free and Pro</h2>
-<p>Screening is free and unlimited. What Pro adds is monitoring: the ability to leave names under watch instead of asking again yourself.</p>
-<table><tr><th>&nbsp;</th><th class="nw">Free, no key</th><th class="nw">Pro, $19.99 a month</th></tr>
-<tr><td><b>Screen a name today</b></td><td class="nw">Unlimited requests<br><span class="meta">{F['screen']} names in each</span></td><td class="nw">Unlimited requests<br><span class="meta">{P['screen']} names in each</span></td></tr>
-<tr><td><b>Keep names under watch</b><br><span class="meta">Rechecked against every nightly build, with an alert by email or webhook when a watched name starts matching, when a match is amended, and when one is delisted</span></td><td class="nw">&mdash;</td><td class="nw">Included</td></tr>
-<tr><td><b>Depth of the candidate search</b><br><span class="meta">How many possible matches are scored per name before the best are returned; deeper search surfaces more distant spelling variants</span></td><td class="nw">{F['candidates']} per name</td><td class="nw">{P['candidates']} per name</td></tr>
-<tr><td><b>Search results</b></td><td class="nw">{F['search']} per request</td><td class="nw">{P['search']} per request</td></tr>
-<tr><td><b>The whole dataset</b><br><span class="meta">Every static file: parties, programs, countries, changes, RSS</span></td><td class="nw">Included</td><td class="nw">Included</td></tr>
-<tr><td><b>In-browser screener</b><br><span class="meta">Runs on your own machine, so no list ever leaves it</span></td><td class="nw">No limit</td><td class="nw">No limit</td></tr>
-<tr><td><b>Commercial use</b></td><td class="nw">&mdash;</td><td class="nw">Included</td></tr></table>
-<div class="row"><a class="btn warm" href="{site_url}api/subscribe">Subscribe to Pro</a><a class="btn" href="{site_url}api/portal">Manage subscription</a><a class="btn" href="#quickstart">Start free</a></div>
+<h2 id="pricing">What it costs</h2>
+<p><b>Screening is free, unlimited, and needs no key.</b> Unlimited requests, {F['screen']} names in each, every static file, and an in-browser screener with no limit at all. That is not a trial. If screening is what you need, you are done, and nothing below applies to you.</p>
+<p>Pro is $19.99 a month and exists for one reason: it keeps watching after you stop asking.</p>
+<table><tr><th>Pro adds</th><th>&nbsp;</th></tr>
+<tr><td><b>Monitoring</b><br><span class="meta">Leave names under watch. Every nightly build rechecks them against all six lists and raises an alert by email or webhook when a watched name starts matching, when an existing match is amended, and when one is delisted. The counterparty who cleared in January and is designated in March is the case this exists for.</span></td><td class="nw">Included</td></tr>
+<tr><td><b>Deeper candidate search</b><br><span class="meta">{P['candidates']} possible matches scored per name instead of {F['candidates']}, which surfaces more distant spelling variants.</span></td><td class="nw">{P['candidates']} per name</td></tr>
+<tr><td><b>Bigger batches</b><br><span class="meta">For a client book or a subscription list going through in one pass.</span></td><td class="nw">{P['screen']} names per request<br>{P['search']} search results</td></tr>
+<tr><td><b>Commercial use and support</b></td><td class="nw">Included</td></tr></table>
+<div class="row"><a class="btn warm" href="{site_url}api/subscribe">Subscribe, $19.99 a month</a><a class="btn" href="{site_url}api/portal">Manage subscription</a></div>
 <p class="meta">Cancel any time; access runs to the end of the paid period. Keys are issued on the page you land on after checkout and can be re-shown by reopening that link. Send the key as an <code>x-api-key</code> header rather than <code>?key=</code>, which leaks into logs and browser history. <code>GET me</code> confirms the tier. Keys deactivate automatically when a subscription ends. Tax is calculated at checkout.</p>
 
 <h2 id="monitoring">Monitoring</h2>

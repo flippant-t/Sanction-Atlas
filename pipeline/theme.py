@@ -14,10 +14,10 @@ code,pre,kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fo
 code{background:var(--bg-3);border:1px solid var(--line);border-radius:3px;padding:1px 5px}
 pre{background:var(--bg-3);border:1px solid var(--line);border-radius:4px;padding:14px 16px;overflow:auto;line-height:1.55}pre code{background:none;border:0;padding:0}
 .nav{position:sticky;top:0;z-index:20;background:var(--bg-2);border-bottom:1px solid var(--line)}
-.nav .in{max-width:1120px;margin:0 auto;padding:0 20px;height:56px;display:flex;align-items:center;gap:22px;font-size:15px}
+.nav .in{padding:0 18px;height:52px;display:flex;align-items:center;gap:20px;font-size:15px}
 .nav a{color:var(--ink-2);text-decoration:none}
 footer a,.nav a,.btn,ul.plain a,.tabs button{text-decoration:none}.nav a:hover,.nav a.on{color:var(--ink)}
-.nav .brand{color:var(--ink);font-size:18px;letter-spacing:.01em;margin-right:8px}.nav .brand b{color:var(--ink-3);font-weight:400}
+.nav .brand{color:var(--ink);font-size:18px;letter-spacing:.01em;margin-right:4px}.nav .brand b{color:var(--ink-3);font-weight:400}
 .nav .grow{flex:1}.nav .cta{background:none;color:var(--ink);border:1px solid var(--line-2);padding:6px 12px;border-radius:5px}.nav .cta:hover{border-color:var(--ink);background:var(--bg-3)}
 main{max-width:920px;margin:0 auto;padding:34px 24px 64px}
 .narrow{max-width:760px}
@@ -61,7 +61,7 @@ footer a{color:var(--ink-2);text-decoration:none}footer a:hover{color:var(--ink)
 /* Keyboard focus has to be visible: a compliance team that runs an accessibility check will look. */
 a:focus-visible,button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--ink);outline-offset:2px;border-radius:2px}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important;animation:none!important}}
-@media(max-width:720px){.nav .in{height:auto;flex-wrap:wrap;padding:10px 16px;gap:10px 16px}.nav .brand{width:100%}h1{font-size:30px}.cols{columns:1}dl{grid-template-columns:1fr}main{padding:24px 16px 56px}}
+@media(max-width:720px){.nav .in{height:auto;flex-wrap:wrap;padding:8px 12px;gap:8px 14px}.nav .brand{width:100%}h1{font-size:30px}.cols{columns:1}dl{grid-template-columns:1fr}main{padding:24px 16px 56px}}
 """
 
 def esc(s): return html.escape(str(s or ""))
