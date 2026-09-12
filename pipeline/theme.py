@@ -15,16 +15,17 @@ pre{background:var(--bg-3);border:1px solid var(--line);border-radius:4px;paddin
 .nav a{color:var(--ink-2);text-decoration:none}.nav a:hover,.nav a.on{color:var(--ink)}
 .nav .brand{color:var(--ink);font-size:18px;letter-spacing:.01em;margin-right:8px}.nav .brand b{color:var(--accent);font-weight:400}
 .nav .grow{flex:1}.nav .cta{background:none;color:var(--accent);border:1px solid var(--line-2);padding:6px 12px;border-radius:5px}.nav .cta:hover{border-color:var(--accent);color:var(--accent-2)}
-main{max-width:1120px;margin:0 auto;padding:28px 20px 64px}
-.narrow{max-width:820px}
+main{max-width:920px;margin:0 auto;padding:34px 24px 64px}
+.narrow{max-width:760px}
 /* Serif at a full page width runs well past a readable line. Prose is capped; tables, code and
    anything laid out in columns keep the full width. */
 main p,main li,main dd{max-width:74ch}
 main table p,main table li,.card li{max-width:none}
-h1{font-size:30px;font-weight:400;letter-spacing:-.005em;line-height:1.2;margin:0 0 10px;max-width:26ch}
-h2{font-size:20px;font-weight:400;margin:34px 0 10px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+h1{font-size:30px;font-weight:400;letter-spacing:-.005em;line-height:1.2;margin:0 0 12px;max-width:26ch}
+h2{font-size:20px;font-weight:400;margin:38px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.lede+h2,h1+h2{margin-top:8px}
 h3{font-size:17px;font-weight:600;margin:22px 0 8px}
-.lede{font-size:18px;color:var(--ink-2);margin:0 0 22px;max-width:68ch}
+.lede{font-size:18px;color:var(--ink-2);margin:0 0 38px;max-width:64ch}
 .sub{color:var(--ink-2)}.meta{color:var(--ink-3);font-size:13px}.small{font-size:14px}
 .btn{display:inline-block;background:var(--bg-2);border:1px solid var(--line-2);color:var(--ink);padding:9px 16px;border-radius:5px;text-decoration:none;font-size:15px;cursor:pointer;font-family:inherit}
 .btn:hover{border-color:var(--accent);color:var(--ink)}.btn.warm{background:var(--accent-fill);color:#2b1c02;border-color:var(--accent);font-weight:500}.btn.warm:hover{background:var(--accent-2)}

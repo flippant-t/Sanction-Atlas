@@ -246,7 +246,7 @@ def build_pages(site_url):
 <h2>Reuse and attribution</h2>
 <p>The source lists are public government publications. The merged dataset is released under CC0 through the <a href="{site_url}api/">API</a>. Attribution to SanctionScope is appreciated, not required.</p>
 <p class="small">Source acknowledgements: US Consolidated Screening List, International Trade Administration, US Department of Commerce. EU Consolidated Financial Sanctions List, European Commission, Directorate-General for Financial Stability, Financial Services and Capital Markets Union. UK Sanctions List, Foreign, Commonwealth and Development Office, used under the Open Government Licence v3.0. UN Security Council Consolidated List, United Nations. Consolidated List, Australian Department of Foreign Affairs and Trade, CC BY 4.0. Consolidated Canadian Autonomous Sanctions List, Global Affairs Canada, Open Government Licence Canada. City coordinates from GeoNames, CC BY 4.0.</p>
-<h2>Contact</h2><p>Corrections and questions: <a href="mailto:hello@sanctionscope.com">hello@sanctionscope.com</a>. See also the <a href="{site_url}terms.html">terms of service</a> and <a href="{site_url}privacy.html">privacy policy</a>.</p>"""
+<p class="small">Corrections and questions: <a href="mailto:hello@sanctionscope.com">hello@sanctionscope.com</a>. See also the <a href="{site_url}terms.html">terms of service</a> and <a href="{site_url}privacy.html">privacy policy</a>.</p>"""
     write(os.path.join(SITE, "about.html"), page("Coverage", "Which sanctions lists SanctionScope has loaded and when, how the six authorities' lists are merged, and what the site does and does not claim.", body, "", f"{site_url}about.html", on="Coverage"))
     urls.append("about.html")
 
