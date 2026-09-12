@@ -845,6 +845,18 @@ def main():
     n_api, n_sh = res[0], res[1]
     n_search = res[2] if len(res) > 2 else 0
     print(f"api: {n_api} parties in {n_sh} record shards and {n_search} search shards under site/api/v1/")
+    # Pro watchlist monitoring. Runs here because a Cloudflare Function cannot match thousands
+    # of names against every party inside 10 ms of CPU. Never allowed to break the build.
+    try:
+        import monitor
+        link_map = defaultdict(list)
+        for e in edges:
+            if e["k"] == "link":
+                link_map[e["a"]].append(e["b"]); link_map[e["b"]].append(e["a"])
+        monitor.run(compact, {"date": today, "events": changes["events"]}, args.site_url, dict(link_map))
+    except Exception as ex:
+        print(f"monitoring: skipped ({type(ex).__name__}: {str(ex)[:150]})")
+
     with_mmsi = sum(1 for v in roster if v.get("mmsi"))
     print(f"vessels: {meta_vessels} on the AIS roster, {with_mmsi} with an MMSI from the record (tracked at once), {meta_vessels - with_mmsi} IMO only")
 

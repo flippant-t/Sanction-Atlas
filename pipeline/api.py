@@ -195,6 +195,18 @@ def build_api(site_url):
             "/party/{id}": {"get": {"summary": "One party by id (dynamic)"}},
             "/search": {"get": {"summary": "Name or alias search (dynamic)", "parameters": [{"name": "q", "in": "query", "required": True}, {"name": "limit", "in": "query"}]}},
             "/me": {"get": {"summary": "Tier and limits for the supplied API key"}},
+            "/watchlist": {
+                "get": {"summary": "Your watchlists (Pro)"},
+                "post": {"summary": "Create or replace a watchlist of names to monitor (Pro). Matching runs in the nightly build, so the response is a confirmation, not results.",
+                         "requestBody": {"content": {"application/json": {"schema": {"type": "object", "properties": {
+                             "label": {"type": "string"}, "names": {"type": "array", "items": {"type": "string"}},
+                             "threshold": {"type": "number"}, "near": {"type": "boolean"},
+                             "email": {"type": "string"}, "webhook": {"type": "string"}}}}}}}},
+            "/watchlist/{id}": {"get": {"summary": "One watchlist with its current matches (Pro)"},
+                                "delete": {"summary": "Delete a watchlist, its names and its match history (Pro)"}},
+            "/alerts": {"get": {"summary": "Changes affecting your watched names (Pro)", "parameters": [
+                {"name": "since", "in": "query"}, {"name": "type", "in": "query"},
+                {"name": "list_id", "in": "query"}, {"name": "limit", "in": "query"}]}},
             "/screen": {"post": {"summary": "Fuzzy screening (100 names per request free, 500 with a Pro key); the in-browser screener has no limit", "requestBody": {"content": {"application/json": {"schema": {"type": "object", "properties": {"names": {"type": "array", "items": {"type": "string"}}, "threshold": {"type": "number"}}}}}}}},
         },
     })
