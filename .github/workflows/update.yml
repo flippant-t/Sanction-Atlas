@@ -45,4 +45,3 @@ jobs:
             sleep $((i * 15))
           done
           exit 1
-
