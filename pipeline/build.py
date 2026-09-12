@@ -766,12 +766,18 @@ def main():
     iso_numeric["XK"] = -99; iso_name["XK"] = "Kosovo"
 
     # vessel roster for the AIS collector: every vessel with an IMO (7 digits) or MMSI (9 digits) anywhere in its record
-    imo_re = re.compile(r"\bIMO\s*(?:No\.?|Number)?[:\s]*(\d{7})\b", re.I); mmsi_re = re.compile(r"\bMMSI\s*[:\s]*(\d{9})\b", re.I)
+    # OFAC writes these as "IMO 9187629; MMSI, 572469210", so the separator after MMSI is a comma, not a
+    # colon or a space. The old pattern required whitespace or a colon and therefore matched nothing, which
+    # left every vessel without an MMSI - and AIS position reports carry MMSI, not IMO, so nothing could be
+    # tracked until the collector happened to learn the mapping off the global feed. Accept any short run of
+    # punctuation, and keep only MMSIs whose first three digits are a real maritime country code.
+    imo_re = re.compile(r"\bIMO\s*(?:No\.?|Number)?[:\s]*(\d{7})\b", re.I)
+    mmsi_re = re.compile(r"\bMMSI\b[^0-9A-Za-z]{0,12}(\d{9})(?!\d)", re.I)
     roster = []
     for p in parties:
         if p["t"] != "Vessel": continue
         blob = " ".join([p["ids"], p["rem"], p["ves"]] + p["alt"])
-        imos = sorted(set(imo_re.findall(blob))); mmsis = sorted(set(mmsi_re.findall(blob)))
+        imos = sorted(set(imo_re.findall(blob))); mmsis = sorted({m for m in mmsi_re.findall(blob) if 200 <= int(m[:3]) <= 799})
         if not imos and not mmsis: continue
         roster.append({"id": p["id"], "n": p["n"], "imo": imos[0] if imos else None, "mmsi": mmsis[0] if mmsis else None, "au": p["au"], "flag": p.get("flag") or "", "cc": p["cc"], "s": p["s"]})
     with open(os.path.join(OUT, "vessels.json"), "w", encoding="utf-8") as f:
@@ -839,6 +845,8 @@ def main():
     n_api, n_sh = res[0], res[1]
     n_search = res[2] if len(res) > 2 else 0
     print(f"api: {n_api} parties in {n_sh} record shards and {n_search} search shards under site/api/v1/")
+    with_mmsi = sum(1 for v in roster if v.get("mmsi"))
+    print(f"vessels: {meta_vessels} on the AIS roster, {with_mmsi} with an MMSI from the record (tracked at once), {meta_vessels - with_mmsi} IMO only")
 
 if __name__ == "__main__":
     main()
