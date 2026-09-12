@@ -59,17 +59,41 @@ export function jw(a, b) {
   return j + l * 0.1 * (1 - j);
 }
 
-// Each query token takes its best match in the candidate's name; the score is average coverage
-// of the query, lightly penalised when the listed name carries many extra words.
+// Tokens are weighted by how rare they are across the corpus, using the same df map the
+// candidate selector already uses. "GONZALEZ" sits on ~1900 parties and carries almost no
+// information; "PRIDMORE" sits on one. Scoring them equally is what produced the false
+// positives on common names. Leftover high-information tokens on the listed name also pull
+// the score down, so matching two words of a four-word name is no longer a match.
+const IDF_MIN = 0.5, IDF_MAX = 8, COVERAGE_WEIGHT = 0.35, TOKEN_FLOOR = 0.86;
+
+function idfOf(t) {
+  const m = isolate.meta || {};
+  const d = (m.df || {})[t];
+  if (!d) return IDF_MAX;                       // absent from df means rare, so most informative
+  const n = m.entities || m.n || m.total || 90000;
+  return Math.max(IDF_MIN, Math.min(IDF_MAX, Math.log(n / d)));
+}
+
 export function scoreRec(q, rec) {
   const qt = tokens(q); if (!qt.length) return 0;
+  const qw = qt.map(idfOf), qTot = qw.reduce((a, b) => a + b, 0) || 1;
   let best = 0;
   for (const name of [rec[1], ...(rec[6] || []).slice(0, 3)]) {
     const nt = tokens(name); if (!nt.length) continue;
-    let sum = 0;
-    for (const a of qt) { let m = 0; for (const b of nt) { const s = a === b ? 1 : jw(a, b); if (s > m) m = s; } sum += m >= 0.8 ? m : m * 0.5; }
-    const cov = sum / qt.length, extra = Math.max(0, nt.length - qt.length);
-    const s = cov * Math.max(0.8, 1 - 0.04 * extra);
+    const nw = nt.map(idfOf), nTot = nw.reduce((a, b) => a + b, 0) || 1;
+    const used = new Array(nt.length).fill(false);
+    let mq = 0, mn = 0;
+    for (let i = 0; i < qt.length; i++) {
+      let bj = -1, bs = 0;
+      for (let j = 0; j < nt.length; j++) {
+        if (used[j]) continue;
+        const s = qt[i] === nt[j] ? 1 : jw(qt[i], nt[j]);
+        if (s > bs) { bs = s; bj = j; }
+      }
+      if (bj >= 0 && bs >= TOKEN_FLOOR) { used[bj] = true; mq += qw[i] * bs; mn += nw[bj] * bs; }
+    }
+    if (!mq) continue;
+    const s = Math.pow(mq / qTot, 1 - COVERAGE_WEIGHT) * Math.pow(mn / nTot, COVERAGE_WEIGHT);
     if (s > best) best = s;
     if (best >= 0.999) break;
   }
