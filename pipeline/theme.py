@@ -66,6 +66,22 @@ a:focus-visible,button:focus-visible,input:focus-visible,summary:focus-visible{o
 
 def esc(s): return html.escape(str(s or ""))
 
+# A signed-in visitor should see that they are signed in on every page, not only inside the app.
+# Loading the Supabase client on all forty thousand pages to discover that would be absurd, so this
+# reads the session token the client already keeps in localStorage. It only decides which link to
+# show; nothing is trusted from it, and every actual query is still checked by row level security.
+SESSION_JS = """<script>
+(function(){try{
+  var k=Object.keys(localStorage).find(function(x){return /^sb-.*-auth-token$/.test(x)});
+  if(!k)return;
+  var t=JSON.parse(localStorage.getItem(k)||"null");
+  if(!t||!t.access_token)return;
+  if(t.expires_at && t.expires_at*1000 < Date.now())return;
+  var a=document.getElementById("acctlink");
+  if(a){a.textContent="Your screening";}
+}catch(e){}})();
+</script>"""
+
 def header(rel, on=""):
     # "Methods" described the page accurately and got no clicks: someone assessing a data source
     # looks for coverage, not methodology. Vessels moved to the footer while AIS coverage is
@@ -76,7 +92,7 @@ def header(rel, on=""):
     links = "".join(f'<a href="{(rel + h) or "./"}"{" class=on" if k == on else ""}>{k}</a>' for k, h in items)
     # Points at the pricing section, not at Stripe. Sending a first-time visitor straight to a
     # checkout asks them to buy something they have not been shown yet.
-    return f'<div class="nav"><div class="in"><a class="brand" href="{rel or "./"}">Sanction<b>Scope</b></a>{links}<span class="grow"></span><a class="cta" href="{rel}api/#pricing">Pricing</a></div></div>'
+    return f'<div class="nav"><div class="in"><a class="brand" href="{rel or "./"}">Sanction<b>Scope</b></a>{links}<span class="grow"></span><a href="{rel}app.html" id="acctlink">Sign in</a><a class="cta" href="{rel}api/#pricing">Pricing</a></div></div>' + SESSION_JS
 
 def footer(rel, built=""):
     return f'''<footer><div class="in"><span class="grow">SanctionScope. US, EU, UK, UN, Australian and Canadian sanctions lists on one map{(", rebuilt " + esc(built)) if built else ""}. Not legal advice; verify against the official record.</span>
