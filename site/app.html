@@ -65,6 +65,7 @@
   <div id="runs"><p class="meta">Loading…</p></div>
 
   <div id="detail"></div>
+  <div id="party" class="hidden card" style="margin-top:18px"></div>
 </section>
 
 </main>
@@ -160,7 +161,7 @@ async function refresh() {
   // account the caller created. There is no path here to join somebody else's account.
   let { data: me } = await sb.from("me").select("*").maybeSingle();
   if (!me) {
-    const orgName = ($("org").value || "").trim() || (session.user.email.split("@")[1] || "My account");
+    const orgName = ($("org").value || "").trim() || "My account";
     const { data: acct, error: aErr } = await sb.from("account").insert({ name: orgName }).select("id").single();
     if (aErr) { say("Could not create the account: " + aErr.message, true); return; }
     const { error: mErr } = await sb.from("membership").insert({ user_id: session.user.id, account_id: acct.id, role: "admin" });
@@ -171,7 +172,13 @@ async function refresh() {
   ME = me;
 
   $("gate").classList.add("hidden"); $("app").classList.remove("hidden");
-  $("who").textContent = `${me.account_name} · ${session.user.email}`;
+  $("who").innerHTML = `<a href="#" id="rename">${esc(me.account_name)}</a> · ${esc(session.user.email)}`;
+  $("rename").onclick = async ev => { ev.preventDefault();
+    const name = prompt("Account name", ME?.account_name || "");
+    if (!name || !name.trim()) return;
+    const { error } = await sb.from("account").update({ name: name.trim() }).eq("id", ME.account_id);
+    if (!error) refresh();
+  };
   $("signout").classList.remove("hidden");
   $("applede").textContent = `Everything screened from this account is kept with the date, the build of the lists it ran against, and the score, so the record can be produced later.`;
   await Promise.all([loadIndex(), loadRuns()]);
@@ -318,9 +325,11 @@ async function openRun(runId) {
   <div class="row" style="margin:10px 0"><button class="btn" id="exp">Download this run as CSV</button></div>
   <table><tr><th>Name</th><th class="nw">Result</th><th>Match</th><th class="score">Score</th><th class="nw">Listed by</th></tr>`
   + subs.map(s => s.match.length
-      ? s.match.map((m,i) => `<tr>${i===0?`<td rowspan="${s.match.length}">${esc(s.name_as_run)}</td><td rowspan="${s.match.length}" class="hit nw">possible match</td>`:""}<td><a href="./#p=${encodeURIComponent(m.party_id)}" target="_blank" rel="noopener">${esc(m.matched_name)}</a></td><td class="score">${(+m.score).toFixed(2)}</td><td class="nw">${esc((m.authorities||[]).join(", "))}</td></tr>`).join("")
+      ? s.match.map((m,i) => `<tr>${i===0?`<td rowspan="${s.match.length}">${esc(s.name_as_run)}</td><td rowspan="${s.match.length}" class="hit nw">possible match</td>`:""}<td><a href="#" class="party" data-party="${esc(m.party_id)}">${esc(m.matched_name)}</a></td><td class="score">${(+m.score).toFixed(2)}</td><td class="nw">${esc((m.authorities||[]).join(", "))}</td></tr>`).join("")
       : `<tr><td>${esc(s.name_as_run)}</td><td class="clear nw">no match</td><td colspan="3"></td></tr>`).join("")
   + "</table>";
+
+  document.querySelectorAll("a.party").forEach(a => a.onclick = ev => { ev.preventDefault(); showParty(a.dataset.party); });
 
   $("exp").onclick = () => {
     const rows = [["run_id","run_started","list_build","matcher","threshold","name","result","match","party_id","score","authorities","programs"]];
@@ -334,6 +343,37 @@ async function openRun(runId) {
     a.download = `sanctionscope-run-${runId.slice(0,8)}.csv`; a.click(); URL.revokeObjectURL(a.href);
   };
   $("detail").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// The full record, shown here rather than on the map. Sending someone to the map lost their place
+// in the run, and there was no way back to it.
+async function showParty(id) {
+  const el = $("party");
+  el.classList.remove("hidden");
+  el.innerHTML = `<p class="meta">Loading ${esc(id)}…</p>`;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  let r;
+  try { r = await fetch("api/v1/party/" + encodeURIComponent(id)).then(x => x.json()); }
+  catch (e) { el.innerHTML = `<p class="meta">Could not load the record.</p>`; return; }
+  const row = (k, v) => v && String(v).trim() ? `<dt>${esc(k)}</dt><dd>${v}</dd>` : "";
+  const recs = (r.recs || []).filter(x => x.url)
+    .map(x => `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.au)}</a>${x.listed ? ` <span class="meta">${esc(x.listed)}</span>` : ""}`).join("<br>");
+  el.innerHTML = `<h3>${esc(r.n || id)}</h3>
+    <p class="meta">${esc(r.t || "")}${r.cc ? " · " + esc(r.cc) : ""} · ${esc((r.au || []).join(", "))}</p>
+    <dl>
+      ${row("Programs", esc((r.p || []).join(", ")))}
+      ${row("Also known as", esc((r.alt || []).slice(0, 12).join("; ")))}
+      ${row("Address", (r.a || []).map(esc).join("<br>"))}
+      ${row("Born", esc(r.dob))}
+      ${row("Nationality", esc((r.nat || []).join(", ")))}
+      ${row("Identifiers", esc(r.ids))}
+      ${row("Listed", esc(r.listed))}
+      ${row("Remarks", esc(r.rem))}
+      ${row("Official records", recs)}
+    </dl>
+    <div class="row"><a class="btn" href="./#p=${encodeURIComponent(id)}" target="_blank" rel="noopener">Open on the map</a><button class="btn" id="closeparty">Close</button></div>
+    <p class="meta">Confirm against the official record, linked above, before acting on this.</p>`;
+  $("closeparty").onclick = () => el.classList.add("hidden");
 }
 
 sb.auth.onAuthStateChange(() => refresh());
