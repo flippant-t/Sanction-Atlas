@@ -3,18 +3,17 @@
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=(), interest-cohort=()
   Cross-Origin-Opener-Policy: same-origin
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tiles.openfreemap.org; connect-src 'self' https://tiles.openfreemap.org https://demotiles.maplibre.org; font-src 'self' https://demotiles.maplibre.org; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://buy.stripe.com https://billing.stripe.com; object-src 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tiles.openfreemap.org; connect-src 'self' https://tiles.openfreemap.org https://demotiles.maplibre.org https://cwommbzfvfeavjbovkkq.supabase.co wss://cwommbzfvfeavjbovkkq.supabase.co; font-src 'self' https://demotiles.maplibre.org; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://buy.stripe.com https://billing.stripe.com; object-src 'none'
 
-# The signed-in app is the only page that talks to Supabase, so it is the only page whose policy
-# allows it. The client library itself is vendored under /vendor, so script-src stays at 'self'
-# everywhere: no third-party script is ever loaded, on this page or any other.
+# One Content-Security-Policy, in one place. A second, stricter policy on /app.html did not replace
+# this one: Cloudflare sent both, browsers enforce both, and the stricter directive won, which
+# blocked the very connection the second rule existed to allow. Supabase is therefore listed here in
+# connect-src. script-src stays at 'self' because the client library is vendored under /vendor
+# rather than loaded from a CDN, so no third-party script runs on any page.
+
 /app.html
-  X-Content-Type-Options: nosniff
-  Referrer-Policy: strict-origin-when-cross-origin
-  Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=(), interest-cohort=()
-  Cross-Origin-Opener-Policy: same-origin
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://cwommbzfvfeavjbovkkq.supabase.co wss://cwommbzfvfeavjbovkkq.supabase.co; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
   Cache-Control: no-store
+  X-Robots-Tag: noindex
 
 /api/v1/*
   Access-Control-Allow-Origin: *
