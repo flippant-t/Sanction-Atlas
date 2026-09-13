@@ -155,12 +155,19 @@ async function refresh() {
   if (!session) { $("gate").classList.remove("hidden"); $("app").classList.add("hidden");
                   $("who").textContent = ""; $("signout").classList.add("hidden"); return; }
 
-  // A new user has no membership yet; this is the one call that can create an account.
-  const { error: bErr } = await sb.rpc("bootstrap_account", { org_name: $("org").value || null });
-  if (bErr) { say("Could not set up the account: " + bErr.message, true); return; }
-
-  const { data: me, error } = await sb.from("me").select("*").maybeSingle();
-  if (error || !me) { say("Signed in, but no account is attached. " + (error?.message || ""), true); return; }
+  // A new user has no membership yet, so create one. Both inserts are constrained by policy: the
+  // account row must be created_by the caller, and the membership may only attach the caller to an
+  // account the caller created. There is no path here to join somebody else's account.
+  let { data: me } = await sb.from("me").select("*").maybeSingle();
+  if (!me) {
+    const orgName = ($("org").value || "").trim() || (session.user.email.split("@")[1] || "My account");
+    const { data: acct, error: aErr } = await sb.from("account").insert({ name: orgName }).select("id").single();
+    if (aErr) { say("Could not create the account: " + aErr.message, true); return; }
+    const { error: mErr } = await sb.from("membership").insert({ user_id: session.user.id, account_id: acct.id, role: "admin" });
+    if (mErr) { say("Could not attach you to the account: " + mErr.message, true); return; }
+    ({ data: me } = await sb.from("me").select("*").maybeSingle());
+  }
+  if (!me) { say("Signed in, but no account is attached.", true); return; }
   ME = me;
 
   $("gate").classList.add("hidden"); $("app").classList.remove("hidden");
