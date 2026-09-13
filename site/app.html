@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Your screening · SanctionScope</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%2316181a'/><circle cx='16' cy='16' r='5' fill='%23f4f4f1'/></svg>">
+<link rel="stylesheet" href="palette.css">
+<link rel="stylesheet" href="theme.css">
+<style>
+  textarea{width:100%;min-height:150px;background:var(--bg-3);border:1px solid var(--line);color:var(--ink);
+           padding:12px;border-radius:4px;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  input[type=email],input[type=password],input[type=text]{background:var(--bg-2);border:1px solid var(--line-2);
+           color:var(--ink);padding:9px 11px;border-radius:5px;font:inherit;font-size:15px;width:100%;max-width:340px}
+  input:focus,textarea:focus{outline:2px solid var(--ink);outline-offset:1px}
+  input[type=range]{accent-color:var(--ink);vertical-align:middle}
+  .ctl{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:12px 0 0}
+  .ctl label{font-size:14px;color:var(--ink-2);display:flex;align-items:center;gap:8px}
+  .field{margin:0 0 12px}
+  .field label{display:block;font-size:14px;color:var(--ink-2);margin:0 0 4px}
+  .hit{color:var(--bad)}
+  .clear{color:var(--ink-3)}
+  .score{font-variant-numeric:tabular-nums;color:var(--ink-2);text-align:right;white-space:nowrap}
+  .who{font-size:14px;color:var(--ink-3)}
+  #msg{margin:12px 0;font-size:14px}
+  #msg.bad{color:var(--bad)}
+  tr.rowlink{cursor:pointer}
+  tr.rowlink:hover td{background:var(--bg-3)}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<div class="nav"><div class="in"><a class="brand" href="./">Sanction<b>Scope</b></a><a href="./">Map</a><a href="screen.html">Screen a list</a><a href="api/">API</a><a href="about.html">Coverage</a><span class="grow"></span><span class="who" id="who"></span><a class="cta hidden" href="#" id="signout">Sign out</a></div></div>
+
+<main class="narrow">
+
+<!-- ---------------------------------------------------------------- signed out -->
+<section id="gate">
+  <h1>Your screening history</h1>
+  <p class="lede">An account saves what you screened, when, and against which build of the lists, so you can show the record later. Screening itself stays free and needs no account: the <a href="screen.html">in-browser screener</a> works without one and keeps nothing.</p>
+  <div class="field"><label for="email">Email</label><input id="email" type="email" autocomplete="email"></div>
+  <div class="field"><label for="password">Password</label><input id="password" type="password" autocomplete="current-password"></div>
+  <div class="field" id="orgfield"><label for="org">Organisation <span class="meta">(new accounts only)</span></label><input id="org" type="text" autocomplete="organization"></div>
+  <div class="row"><button class="btn warm" id="signin">Sign in</button><button class="btn" id="signup">Create an account</button></div>
+  <p id="msg"></p>
+  <p class="meta">Names you screen while signed in are stored against your account so they can be shown again. The <a href="privacy.html">privacy policy</a> says what is held and for how long.</p>
+</section>
+
+<!-- ---------------------------------------------------------------- signed in -->
+<section id="app" class="hidden">
+  <h1>Your screening</h1>
+  <p class="lede" id="applede"></p>
+
+  <h2>Screen a list</h2>
+  <textarea id="names" placeholder="Sberbank of Russia&#10;Ivan Ivanov&#10;Acme Trading FZE"></textarea>
+  <div class="ctl">
+    <button class="btn warm" id="run">Screen and save</button>
+    <input type="file" id="file" accept=".csv,.txt" class="hidden"><button class="btn" id="pick">Load CSV</button>
+    <label for="th">Threshold <input type="range" id="th" min="0.6" max="1" step="0.01" value="0.85"> <b id="thv">0.85</b> <span class="meta" id="thword">balanced</span></label>
+    <input id="label" type="text" placeholder="Label, e.g. Q3 onboarding" style="max-width:240px">
+  </div>
+  <p id="status" class="meta">Loading the index…</p>
+
+  <h2>Past runs</h2>
+  <div id="runs"><p class="meta">Loading…</p></div>
+
+  <div id="detail"></div>
+</section>
+
+</main>
+
+<footer><div class="in"><span class="grow">SanctionScope. Not legal advice; verify against the official record.</span>
+<a href="about.html">Coverage</a><a href="api/">API</a><a href="terms.html">Terms</a><a href="privacy.html">Privacy</a><a href="mailto:hello@sanctionscope.com">Contact</a></div></footer>
+
+<script type="module">
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+// The anon key is meant to be public. What keeps one account out of another's data is row level
+// security in the database, not secrecy here.
+const SUPABASE_URL = "https://cwommbzfvfeavjbovkkq.supabase.co";
+const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN3b21tYnpmdmZlYXZqYm92a2txIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkyNTE0MjQsImV4cCI6MjEwNDgyNzQyNH0.5__G__KqBrc9TQSfU4Pm5YuJN1w2M-fEPLlSzucdw0s";
+const MATCHER_VERSION = "idf-1.0.0";
+
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON);
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let ME = null;
+
+function say(text, bad) { $("msg").textContent = text; $("msg").className = bad ? "bad" : ""; }
+
+// ---------------------------------------------------------------- matching
+// Same scoring as the API and the free screener: each word weighted by how rare it is across the
+// corpus, and leftover words in the listed name pulling the score down.
+const LEGAL = new Set("LLC LTD LIMITED INC CORP CORPORATION CO COMPANY GMBH AG SA SAS SARL BV NV PLC PJSC JSC OJSC CJSC OAO ZAO OOO AO PAO LLP LP SRL SPA PTE PTY PVT FZE FZCO THE OF AND PUBLIC JOINT STOCK OPEN CLOSED".split(" "));
+const norm = s => (s||"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/[^A-Z0-9 ]+/g," ").replace(/\s+/g," ").trim();
+const tokens = s => norm(s).split(" ").filter(t => t && !LEGAL.has(t));
+
+function jw(a,b){if(a===b)return 1;const la=a.length,lb=b.length;if(!la||!lb)return 0;const range=Math.max(0,Math.floor(Math.max(la,lb)/2)-1);const ma=new Array(la).fill(false),mb=new Array(lb).fill(false);let m=0;
+for(let i=0;i<la;i++){const lo=Math.max(0,i-range),hi=Math.min(lb-1,i+range);for(let j=lo;j<=hi;j++)if(!mb[j]&&a[i]===b[j]){ma[i]=mb[j]=true;m++;break;}}if(!m)return 0;let t=0,k=0;for(let i=0;i<la;i++)if(ma[i]){while(!mb[k])k++;if(a[i]!==b[k])t++;k++;}
+const j=(m/la+m/lb+(m-t/2)/m)/3;let l=0;while(l<4&&a[l]===b[l])l++;return j+l*0.1*(1-j);}
+
+let INDEX = null, TOK = null, META = null;
+const IDF_MIN=0.5, IDF_MAX=8, COVERAGE_WEIGHT=0.35, TOKEN_FLOOR=0.86;
+const idfOf = t => { const l = TOK && TOK.get(t); const df = l ? l.length : 0;
+  return df ? Math.max(IDF_MIN, Math.min(IDF_MAX, Math.log(INDEX.length/df))) : IDF_MAX; };
+
+function scoreParty(q, p) {
+  const qt = tokens(q); if (!qt.length) return { score: 0 };
+  const qw = qt.map(idfOf), qTot = qw.reduce((a,b)=>a+b,0) || 1;
+  let best = 0, bestName = null;
+  for (const name of [p.n, ...(p.alt||[]).slice(0,6)]) {
+    const nt = tokens(name); if (!nt.length) continue;
+    const nw = nt.map(idfOf), nTot = nw.reduce((a,b)=>a+b,0) || 1;
+    const used = new Array(nt.length).fill(false);
+    let mq = 0, mn = 0;
+    for (let i = 0; i < qt.length; i++) {
+      let bj = -1, bs = 0;
+      for (let j = 0; j < nt.length; j++) { if (used[j]) continue; const s = qt[i]===nt[j] ? 1 : jw(qt[i], nt[j]); if (s > bs) { bs = s; bj = j; } }
+      if (bj >= 0 && bs >= TOKEN_FLOOR) { used[bj] = true; mq += qw[i]*bs; mn += nw[bj]*bs; }
+    }
+    if (!mq) continue;
+    const s = Math.pow(mq/qTot, 1-COVERAGE_WEIGHT) * Math.pow(mn/nTot, COVERAGE_WEIGHT);
+    if (s > best) { best = s; bestName = name; }
+  }
+  return { score: best, matchedName: bestName };
+}
+
+function candidates(q, cap = 400) {
+  const qt = [...new Set(tokens(q))]; if (!qt.length) return [];
+  const lists = qt.map(t => TOK.get(t) || []).filter(l => l.length).sort((a,b) => a.length-b.length).slice(0,4);
+  const seen = new Map();
+  for (const l of lists) for (const i of l) seen.set(i, (seen.get(i)||0)+1);
+  return [...seen.entries()].sort((a,b) => b[1]-a[1]).slice(0, cap).map(([i]) => INDEX[i]);
+}
+
+async function loadIndex() {
+  const [idx, meta] = await Promise.all([
+    fetch("api/v1/index.json").then(r => r.json()),
+    fetch("api/v1/meta.json").then(r => r.json()).catch(() => ({}))
+  ]);
+  INDEX = idx; META = meta;
+  TOK = new Map();
+  INDEX.forEach((p,i) => { const seen = new Set();
+    for (const name of [p.n, ...(p.alt||[])]) for (const t of tokens(name))
+      if (t.length > 1 && !seen.has(t)) { seen.add(t); if (!TOK.has(t)) TOK.set(t, []); TOK.get(t).push(i); }});
+  $("status").textContent = `Ready. ${INDEX.length.toLocaleString()} parties, build of ${META.date || "unknown"}.`;
+}
+
+// ---------------------------------------------------------------- auth
+async function refresh() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $("gate").classList.remove("hidden"); $("app").classList.add("hidden");
+                  $("who").textContent = ""; $("signout").classList.add("hidden"); return; }
+
+  // A new user has no membership yet; this is the one call that can create an account.
+  const { error: bErr } = await sb.rpc("bootstrap_account", { org_name: $("org").value || null });
+  if (bErr) { say("Could not set up the account: " + bErr.message, true); return; }
+
+  const { data: me, error } = await sb.from("me").select("*").maybeSingle();
+  if (error || !me) { say("Signed in, but no account is attached. " + (error?.message || ""), true); return; }
+  ME = me;
+
+  $("gate").classList.add("hidden"); $("app").classList.remove("hidden");
+  $("who").textContent = `${me.account_name} · ${session.user.email}`;
+  $("signout").classList.remove("hidden");
+  $("applede").textContent = `Everything screened from this account is kept with the date, the build of the lists it ran against, and the score, so the record can be produced later.`;
+  await Promise.all([loadIndex(), loadRuns()]);
+}
+
+$("signin").onclick = async () => {
+  say("Signing in…");
+  const { error } = await sb.auth.signInWithPassword({ email: $("email").value.trim(), password: $("password").value });
+  if (error) return say(error.message, true);
+  say(""); refresh();
+};
+
+$("signup").onclick = async () => {
+  say("Creating the account…");
+  const { error } = await sb.auth.signUp({ email: $("email").value.trim(), password: $("password").value });
+  if (error) return say(error.message, true);
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) return say("Account created. Check your email to confirm, then sign in.");
+  say(""); refresh();
+};
+
+$("signout").onclick = async e => { e.preventDefault(); await sb.auth.signOut(); location.reload(); };
+
+// ---------------------------------------------------------------- running and saving
+function thWord(v) { return v >= 0.90 ? "strict" : v >= 0.82 ? "balanced" : v >= 0.75 ? "wide" : "research only"; }
+$("th").oninput = e => { const v = +e.target.value; $("thv").textContent = v.toFixed(2); $("thword").textContent = thWord(v); };
+$("pick").onclick = () => $("file").click();
+$("file").onchange = e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader();
+  r.onload = () => { $("names").value = r.result.split(/\r?\n/).map(l => l.split(/[,;\t]/)[0].replace(/^"|"$/g,"").trim()).filter(Boolean).join("\n"); };
+  r.readAsText(f); };
+
+async function ensureSubjects(names) {
+  // One row per distinct name, reused across runs, so a name accumulates a history.
+  const wanted = [...new Map(names.map(n => [norm(n), n])).entries()];
+  const { data: existing, error } = await sb.from("subject").select("id,name_norm").in("name_norm", wanted.map(([k]) => k));
+  if (error) throw error;
+  const byNorm = new Map((existing||[]).map(s => [s.name_norm, s.id]));
+  const missing = wanted.filter(([k]) => !byNorm.has(k));
+  if (missing.length) {
+    const { data: made, error: e2 } = await sb.from("subject")
+      .insert(missing.map(([k, raw]) => ({ account_id: ME.account_id, name: raw, name_norm: k })))
+      .select("id,name_norm");
+    if (e2) throw e2;
+    for (const s of made) byNorm.set(s.name_norm, s.id);
+  }
+  return byNorm;
+}
+
+async function hashChain(payload) {
+  // Chains each audit row to the one before it, so a row altered directly in the database breaks
+  // the chain and can be spotted afterwards.
+  const { data: last } = await sb.from("audit_event").select("hash").order("id", { ascending: false }).limit(1).maybeSingle();
+  const prev = last?.hash || "";
+  const bytes = new TextEncoder().encode(prev + JSON.stringify(payload));
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return { prev_hash: prev || null, hash: [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2,"0")).join("") };
+}
+
+$("run").onclick = async () => {
+  if (!INDEX || !ME) return;
+  const th = +$("th").value;
+  const names = $("names").value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  if (!names.length) { $("status").textContent = "Paste some names first."; return; }
+  $("run").disabled = true;
+  $("status").textContent = `Screening ${names.length.toLocaleString()} names…`;
+
+  try {
+    const scored = names.map(name => ({
+      name,
+      hits: candidates(name).map(p => ({ p, ...scoreParty(name, p) }))
+        .filter(x => x.score >= th).sort((a,b) => b.score - a.score).slice(0, 5)
+    }));
+    const flagged = scored.filter(r => r.hits.length).length;
+
+    const counts = Object.fromEntries(Object.entries(META.authorities || {}).map(([k,v]) => [k, v.n]));
+    const { data: run, error: rErr } = await sb.from("run").insert({
+      account_id: ME.account_id, label: $("label").value.trim() || null, source: "web",
+      list_build: META.date, list_counts: counts, matcher_version: MATCHER_VERSION,
+      threshold: th, subject_count: names.length, flagged_count: flagged,
+      status: "complete", finished_at: new Date().toISOString()
+    }).select("id").single();
+    if (rErr) throw rErr;
+
+    const byNorm = await ensureSubjects(names);
+
+    const rsRows = scored.map(r => ({
+      run_id: run.id, account_id: ME.account_id, subject_id: byNorm.get(norm(r.name)),
+      name_as_run: r.name, outcome: r.hits.length ? "flagged" : "clear",
+      match_count: r.hits.length, top_score: r.hits.length ? r.hits[0].score.toFixed(3) : null
+    }));
+    const { data: rs, error: sErr } = await sb.from("run_subject").insert(rsRows).select("id,name_as_run");
+    if (sErr) throw sErr;
+
+    const idByName = new Map(rs.map(x => [x.name_as_run, x.id]));
+    const matchRows = [];
+    for (const r of scored) for (const h of r.hits) matchRows.push({
+      run_subject_id: idByName.get(r.name), account_id: ME.account_id,
+      party_id: h.p.id, matched_name: h.matchedName || h.p.n,
+      authorities: h.p.au || [], programs: (h.p.p || []).slice(0, 8),
+      score: h.score.toFixed(3),
+      reasons: { matcher: MATCHER_VERSION, threshold: th },
+      // Frozen copy of the listed record, so the evidence does not move when the party does.
+      entity_snapshot: { id: h.p.id, name: h.p.n, type: h.p.t, country: h.p.cc,
+                         authorities: h.p.au, programs: h.p.p, aliases: (h.p.alt||[]).slice(0,10),
+                         list_build: META.date }
+    });
+    if (matchRows.length) { const { error: mErr } = await sb.from("match").insert(matchRows); if (mErr) throw mErr; }
+
+    const payload = { run_id: run.id, subjects: names.length, flagged, threshold: th, list_build: META.date };
+    const chain = await hashChain(payload);
+    await sb.from("audit_event").insert({
+      account_id: ME.account_id, actor_label: ME.full_name || "user", action: "run.completed",
+      object_type: "run", object_id: run.id, payload, ...chain
+    });
+
+    $("status").textContent = `${names.length.toLocaleString()} screened, ${flagged.toLocaleString()} flagged, saved.`;
+    $("names").value = ""; $("label").value = "";
+    await loadRuns(); openRun(run.id);
+  } catch (e) {
+    $("status").textContent = "Could not save the run: " + (e.message || e);
+  } finally { $("run").disabled = false; }
+};
+
+// ---------------------------------------------------------------- history
+async function loadRuns() {
+  const { data, error } = await sb.from("run").select("*").order("started_at", { ascending: false }).limit(50);
+  if (error) { $("runs").innerHTML = `<p class="meta">Could not load runs: ${esc(error.message)}</p>`; return; }
+  if (!data.length) { $("runs").innerHTML = `<p class="meta">Nothing screened yet. Anything you run above is kept here.</p>`; return; }
+  $("runs").innerHTML = '<table><tr><th>When</th><th>Label</th><th class="n">Names</th><th class="n">Flagged</th><th class="nw">List build</th><th class="n">Threshold</th></tr>'
+    + data.map(r => `<tr class="rowlink" data-run="${r.id}"><td class="nw">${new Date(r.started_at).toLocaleString()}</td><td>${esc(r.label||"")}</td><td class="n">${r.subject_count.toLocaleString()}</td><td class="n">${r.flagged_count ? `<span class="hit">${r.flagged_count}</span>` : "0"}</td><td class="nw">${esc(r.list_build)}</td><td class="n">${(+r.threshold).toFixed(2)}</td></tr>`).join("")
+    + "</table>";
+  document.querySelectorAll("tr[data-run]").forEach(tr => tr.onclick = () => openRun(tr.dataset.run));
+}
+
+async function openRun(runId) {
+  const { data: run } = await sb.from("run").select("*").eq("id", runId).single();
+  const { data: subs, error } = await sb.from("run_subject")
+    .select("id,name_as_run,outcome,top_score,screened_at,match(party_id,matched_name,score,authorities,programs)")
+    .eq("run_id", runId).order("outcome", { ascending: true });
+  if (error) { $("detail").innerHTML = `<p class="meta">${esc(error.message)}</p>`; return; }
+
+  $("detail").innerHTML = `<h2>Run of ${new Date(run.started_at).toLocaleString()}</h2>
+  <p class="meta">${run.subject_count.toLocaleString()} names, ${run.flagged_count.toLocaleString()} flagged, threshold ${(+run.threshold).toFixed(2)}, matcher ${esc(run.matcher_version)}, against the list build of ${esc(run.list_build)}. This is the record: what was screened, when, and against what.</p>
+  <div class="row" style="margin:10px 0"><button class="btn" id="exp">Download this run as CSV</button></div>
+  <table><tr><th>Name</th><th class="nw">Result</th><th>Match</th><th class="score">Score</th><th class="nw">Listed by</th></tr>`
+  + subs.map(s => s.match.length
+      ? s.match.map((m,i) => `<tr>${i===0?`<td rowspan="${s.match.length}">${esc(s.name_as_run)}</td><td rowspan="${s.match.length}" class="hit nw">possible match</td>`:""}<td><a href="./#p=${encodeURIComponent(m.party_id)}" target="_blank" rel="noopener">${esc(m.matched_name)}</a></td><td class="score">${(+m.score).toFixed(2)}</td><td class="nw">${esc((m.authorities||[]).join(", "))}</td></tr>`).join("")
+      : `<tr><td>${esc(s.name_as_run)}</td><td class="clear nw">no match</td><td colspan="3"></td></tr>`).join("")
+  + "</table>";
+
+  $("exp").onclick = () => {
+    const rows = [["run_id","run_started","list_build","matcher","threshold","name","result","match","party_id","score","authorities","programs"]];
+    for (const s of subs) {
+      if (!s.match.length) rows.push([runId, run.started_at, run.list_build, run.matcher_version, run.threshold, s.name_as_run, "no match","","","","",""]);
+      for (const m of s.match) rows.push([runId, run.started_at, run.list_build, run.matcher_version, run.threshold, s.name_as_run, "possible match", m.matched_name, m.party_id, m.score, (m.authorities||[]).join(" "), (m.programs||[]).join(" ")]);
+    }
+    const csv = rows.map(r => r.map(v => '"' + String(v ?? "").replace(/"/g,'""') + '"').join(",")).join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    a.download = `sanctionscope-run-${runId.slice(0,8)}.csv`; a.click(); URL.revokeObjectURL(a.href);
+  };
+  $("detail").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+sb.auth.onAuthStateChange(() => refresh());
+refresh();
+</script>
+</body>
+</html>
