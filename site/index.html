@@ -24,7 +24,7 @@
   a{color:var(--ink);text-decoration-color:var(--line-2);text-underline-offset:2px}
   #topnav{height:52px;display:flex;align-items:center;gap:20px;padding:0 18px;border-bottom:1px solid var(--line);background:var(--bg-2);font-size:14px}
   #topnav a{color:var(--ink-2);text-decoration:none}#topnav a:hover,#topnav a.on{color:var(--ink)}
-  #topnav .brand{color:var(--ink);font-size:18px;margin-right:4px}#topnav .brand b{color:var(--accent);font-weight:400}
+  #topnav .brand{color:var(--ink);font-size:18px;margin-right:4px}#topnav .brand b{color:var(--ink-3);font-weight:400}
   #topnav .grow{flex:1}#navstamp{color:var(--ink-3);font-size:12px}
   #topnav .cta{background:none;color:var(--ink);border:1px solid var(--line-2);padding:5px 11px;border-radius:5px}#topnav .cta:hover{border-color:var(--ink);background:var(--bg-3)}
   #topnav .railbtn{display:none}
@@ -103,7 +103,8 @@
 </style>
 </head>
 <body>
-<nav id="topnav"><a class="brand" href="./">Sanction<b>Scope</b></a><a href="./" class="on">Map</a><a href="screen.html">Screen a list</a><a href="api/">API</a><a href="about.html">Coverage</a><span class="grow"></span><span id="navstamp"></span><span class="railbtn" id="railCollapse" title="Hide or show the side panel">Panel</span><a class="cta" href="api/#pricing">Pricing</a></nav>
+<nav id="topnav"><a class="brand" href="./">Sanction<b>Scope</b></a><a href="./" class="on">Map</a><a href="screen.html">Screen a list</a><a href="api/">API</a><a href="about.html">Coverage</a><span class="grow"></span><span id="navstamp"></span><span class="railbtn" id="railCollapse" title="Hide or show the side panel">Panel</span><a href="app.html" id="acctlink">Sign in</a><a class="cta" href="api/#pricing">Pricing</a></nav>
+<script>(function(){try{var k=Object.keys(localStorage).find(function(x){return /^sb-.*-auth-token$/.test(x)});if(!k)return;var t=JSON.parse(localStorage.getItem(k)||"null");if(!t||!t.access_token)return;if(t.expires_at&&t.expires_at*1000<Date.now())return;var a=document.getElementById("acctlink");if(a)a.textContent="Your screening";}catch(e){}})();</script>
 <div id="app">
   <aside id="rail">
     <div class="sec">
