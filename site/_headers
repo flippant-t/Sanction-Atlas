@@ -4,6 +4,18 @@
   Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=(), interest-cohort=()
   Cross-Origin-Opener-Policy: same-origin
   Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tiles.openfreemap.org; connect-src 'self' https://tiles.openfreemap.org https://demotiles.maplibre.org; font-src 'self' https://demotiles.maplibre.org; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://buy.stripe.com https://billing.stripe.com; object-src 'none'
+
+# The signed-in app is the only page that talks to Supabase, so it is the only page whose policy
+# allows it. The client library itself is vendored under /vendor, so script-src stays at 'self'
+# everywhere: no third-party script is ever loaded, on this page or any other.
+/app.html
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=(), interest-cohort=()
+  Cross-Origin-Opener-Policy: same-origin
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://cwommbzfvfeavjbovkkq.supabase.co wss://cwommbzfvfeavjbovkkq.supabase.co; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+  Cache-Control: no-store
+
 /api/v1/*
   Access-Control-Allow-Origin: *
   Cache-Control: public, max-age=3600

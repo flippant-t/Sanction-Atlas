@@ -73,7 +73,10 @@
 <a href="about.html">Coverage</a><a href="api/">API</a><a href="terms.html">Terms</a><a href="privacy.html">Privacy</a><a href="mailto:hello@sanctionscope.com">Contact</a></div></footer>
 
 <script type="module">
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// Vendored rather than pulled from a CDN, like d3 and maplibre already are. Keeps the site
+// Content Security Policy at script-src 'self', and means a third-party CDN outage cannot take
+// the sign-in page down.
+import { createClient } from "./vendor/supabase.min.js";
 
 // The anon key is meant to be public. What keeps one account out of another's data is row level
 // security in the database, not secrecy here.
